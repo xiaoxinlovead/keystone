@@ -1,0 +1,103 @@
+
+on:
+  workflow_call:
+
+jobs:
+  test-system:
+    runs-on: ${{ matrix.platform == 'generic' && 'ubuntu-latest' || matrix.platform }}
+    environment: ${{ matrix.platform != 'generic' && 'track' || null }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [generic, mpfs, cva6, hifive_unmatched]
+        bits: [32, 64]
+        exclude:
+          # mpfs is not 32 bit
+          - platform: mpfs
+            bits: 32
+          # unmatched is not 32 bit
+          - platform: hifive_unmatched
+            bits: 32
+          # ignore 32-bit cva6 for now
+          - platform: cva6
+            bits: 32
+
+    steps:
+    - name: Checkout Keystone
+      uses: actions/checkout@v4
+      with:
+        submodules: 'true'
+        sparse-checkout: |
+          .
+          scripts/
+          mkutils/
+
+    - name: Restore build directory
+      uses: actions/download-artifact@v4
+      with:
+        name: keystone-${{ matrix.platform }}${{ matrix.bits }}-builddir
+        path: .
+
+    - name: Decompress build directory
+      run: cat build.tar.xz | xz -d -T0 | tar -xf -
+
+    - name: Flash and check firmware
+      env:
+        KEYSTONE_PLATFORM: ${{ matrix.platform }}
+        KEYSTONE_BITS: ${{ matrix.bits }}
+        LOGFILE: fw-program.log
+      run: |
+        if [[ -f scripts/ci/plat/${{ matrix.platform }}/flash-firmware.sh ]]; then
+          scripts/ci/plat/${{ matrix.platform }}/flash-firmware.sh
+        fi
+
+    - name: Upload firmware programming log
+      if: ${{ matrix.platform != 'generic' && failure() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-keystone-${{ matrix.platform }}${{ matrix.bits }}-fw-program.log
+        path: fw-program.log
+
+    - name: Flash and check OS
+      env:
+        KEYSTONE_PLATFORM: ${{ matrix.platform }}
+        KEYSTONE_BITS: ${{ matrix.bits }}
+        LOGFILE: os-program.log
+      run: |
+        if [[ -f scripts/ci/plat/${{ matrix.platform }}/flash-os.sh ]]; then
+          scripts/ci/plat/${{ matrix.platform }}/flash-os.sh
+        fi
+
+    - name: Upload OS programming log
+      if: ${{ matrix.platform != 'generic' && failure() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-keystone-${{ matrix.platform }}${{ matrix.bits }}-os-program.log
+        path: os-program.log
+
+    - name: Test Keystone system
+      env:
+        KEYSTONE_PLATFORM: ${{ matrix.platform }}
+        KEYSTONE_BITS: ${{ matrix.bits }}
+        LOGFILE: run.log
+        CMD_LOGFILE: cmd.log
+      run: |
+        scripts/ci/plat/${{ matrix.platform }}/test.sh
+
+    - name: Check expected
+      run: |
+        [[ -z $(diff -wB cmd.log scripts/ci/plat/${{ matrix.platform }}/expected.log) ]]
+
+    - name: Upload run log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-keystone-${{ matrix.platform }}${{ matrix.bits }}-run.log
+        path: run.log
+
+    - name: Upload cmd log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-keystone-${{ matrix.platform }}${{ matrix.bits }}-cmd.log
+        path: cmd.log

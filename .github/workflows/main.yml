@@ -1,0 +1,383 @@
+# Run this job on pushes to master and all PRs
+name: Build and Test
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Define the strategy for the build job. We generally want to cover each
+    # platform that we support here
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [generic, hifive_unmatched, cva6, mpfs]
+        bits: [32, 64]
+        exclude:
+          # unmatched is not 32 bit
+          - platform: hifive_unmatched
+            bits: 32
+          # mpfs is not 32 bit
+          - platform: mpfs
+            bits: 32
+
+    # Output cache keys that were used so we can consolidate them later. Note
+    # that this is a matrix job, and job outputs for these are not well supported
+    # at all in Github Actions (https://github.com/orgs/community/discussions/26639).
+    # Essentially, the last job to set these output variables will win, which is
+    # not always great. In our case, though, this is actually fine since we don't
+    # necessarily need "precise" matching here -- any job's output should be good
+    # enough to serve as a future key into the cache.
+    outputs:
+      buildroot-dl-primary-key: ${{ steps.restore-buildroot-dl.outputs.cache-primary-key }}
+      buildroot-dl-matched-key: ${{ steps.restore-buildroot-dl.outputs.cache-matched-key }}
+      ccache-primary-key: ${{ steps.restore-ccache.outputs.cache-primary-key }}
+      ccache-matched-key: ${{ steps.restore-ccache.outputs.cache-matched-key }}
+
+    steps:
+
+###########
+## Setup ##
+###########
+
+    # First, we need to get the version of Keystone we are working on. We
+    # will also need submodules here since we are doing full builds
+    - name: Checkout Keystone
+      uses: actions/checkout@v4
+      with:
+        submodules: 'true'
+
+    # Get various keys for various caches
+    - name: Get cache keys
+      id: cache-keys
+      run: |
+        # Grab some timestamps for compiler caches
+        echo "YMDH=$(date -u +'%Y-%m-%d-%H')" >> "$GITHUB_OUTPUT"
+        echo "YMD=$(date -u +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+        echo "YM=$(date -u +'%Y-%m')" >> "$GITHUB_OUTPUT"
+        echo "Y=$(date -u +'%Y')" >> "$GITHUB_OUTPUT"
+
+        # Delete any caches which may exist here already
+        rm -rf buildroot/dl*
+        rm -rf buildroot-ccache*
+
+    - name: Clear storage space
+      run: |
+        # Miscellaneous chunky packages
+        sudo apt update
+        sudo apt remove -y 'dotnet*' 'temurin*' '*llvm*' '*libclang*' '*mono*' \
+          'google-cloud-cli' 'azure-cli' 'powershell' 'msbuild' \
+          'microsoft-edge-stable' 'google-chrome-stable' 'firefox' 'nginx-core'
+
+        sudo apt autoremove
+        dpkg --list |grep "^rc" | cut -d " " -f 3 | xargs sudo dpkg --purge
+
+        # 8.4G: Contains a bunch of cached tools (none of which we use)
+        sudo rm -rf /opt/hostedtoolcache
+
+        # 10.1G: Android and javascript
+        sudo rm -rf /usr/local/lib/{android,node_modules}
+
+        # 1.9G: Powrshell documentation??
+        sudo rm -rf /usr/local/share/powershell
+
+    # Install build dependencies
+    - name: Install dependencies
+      run: sudo apt-get install -y cpio rsync bc makeself
+
+    # Restore build and download caches. We key these based on timestamps and build
+    # target, since these essentially "accumulate" useful information (such as source
+    # packages or cached compiled objects) over time. With this scheme, we'll pretty
+    # much always be using the max Github Action cache limit (10GB), but this is okay
+    # since we really only care about keeping the latest cache anyways.
+    - name: Restore buildroot packages
+      id: restore-buildroot-dl
+      uses: actions/cache/restore@v4
+      with:
+        path: dl.tar
+        key: buildroot-dl-${{ steps.cache-keys.outputs.YMDH }}
+        restore-keys: |
+          buildroot-dl-${{ steps.cache-keys.outputs.YMD }}
+          buildroot-dl-${{ steps.cache-keys.outputs.YM }}
+          buildroot-dl-${{ steps.cache-keys.outputs.Y }}
+          buildroot-dl-
+
+    - name: Restore ccache
+      id: restore-ccache
+      uses: actions/cache/restore@v4
+      with:
+        path: ccache.tar.xz
+        key: ccache-${{ steps.cache-keys.outputs.YMDH }}
+        restore-keys: |
+          ccache-${{ steps.cache-keys.outputs.YMD }}
+          ccache-${{ steps.cache-keys.outputs.YM }}
+          ccache-${{ steps.cache-keys.outputs.Y }}
+          ccache-
+
+    - name: Decompress caches
+      run: |
+        if [[ -f dl.tar ]] ; then tar -xf dl.tar -C buildroot ; fi
+        if [[ -f ccache.tar.xz ]]; then tar -xf ccache.tar.xz ; fi
+
+##############
+## Keystone ##
+##############
+
+    # Build Keystone and upload the results log if we fail to do so
+    - name: Build Keystone
+      run: |
+        # Prep upper and lower cache directories
+        mkdir -p buildroot/dl buildroot-ccache
+        mv buildroot/dl{,-lower}
+        mv buildroot-ccache{,-lower}
+        mkdir -p buildroot/dl{,-upper} buildroot-ccache{,-upper}
+
+        # Run the build
+        ./scripts/ci/build-keystone.sh ${{ matrix.platform }} ${{ matrix.bits }} \
+          $PWD/buildroot/dl-{lower,upper} $PWD/buildroot-ccache-{lower,upper}
+
+        # Move upper (changed) caches to expected place
+        rm -rf buildroot/dl{,-lower} buildroot-ccache{,-lower}
+        mv buildroot/dl{-upper,}
+        mv buildroot-ccache{-upper,}
+
+    - name: Upload build log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-keystone-${{ matrix.platform }}${{ matrix.bits }}.log
+        path: build-${{ matrix.platform }}${{ matrix.bits }}/build.log
+
+    # We need parts of the build directory for future tests
+    - name: Compress build directory
+      run: |
+        # Convenient vars
+        BASEDIR="build-${{ matrix.platform }}${{ matrix.bits }}/buildroot.build"
+        PERPACKAGEDIR="$BASEDIR/per-package"
+
+        # Needed by most tests
+        COMPRESSDIRS="$BASEDIR/host $BASEDIR/images"
+        # Needed by runtime build tests
+        COMPRESSDIRS="$COMPRESSDIRS $PERPACKAGEDIR/keystone-examples/host/usr/share/keystone/sdk"
+        # Needed by end-to-end tests
+        COMPRESSDIRS="$COMPRESSDIRS $BASEDIR/target/root/"
+
+        if [[ "${{ matrix.platform }}" == "mpfs" ]]; then
+          COMPRESSDIRS="$COMPRESSDIRS $BASEDIR/build/hss-v2023.06"
+        fi
+
+        tar -cf - $COMPRESSDIRS | xz -9 -T0 > build.tar.xz
+
+    - name: Upload build directory
+      uses: actions/upload-artifact@v4
+      with:
+        name: keystone-${{ matrix.platform }}${{ matrix.bits }}-builddir
+        path: build.tar.xz
+        retention-days: 7
+        compression-level: 0A
+
+    - name: Compress cache directories
+      if: success() || failure()
+      run: |
+        # Clear out old bundles
+        rm -f dl.tar ccache.tar.xz
+
+        # Save new (overlay) bundles
+        if [[ $(du -s buildroot/dl | awk -F' ' '{ print $1 }') -gt 4 ]]; then
+          tar -C buildroot --exclude='**/git' -cf dl.tar dl/
+        fi
+
+        if [[ $(du -s buildroot-ccache | awk -F' ' '{ print $1 }') -gt 4 ]]; then
+          # Ignore character device files, which are used as "whiteouts" in overlayfs
+          find buildroot-ccache -type f -not -type c -print0 | \
+            tar --null -cf - -T - | xz -9 -T0 > ccache.tar.xz
+        fi
+
+    - name: Upload buildroot package directory
+      if: success() || failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: keystone-${{ matrix.platform }}${{ matrix.bits }}-buildroot-dl
+        path: dl.tar
+        retention-days: 1
+        compression-level: 0
+
+    - name: Upload ccache directory
+      if: success() || failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: keystone-${{ matrix.platform }}${{ matrix.bits }}-ccache
+        path: ccache.tar.xz
+        retention-days: 1
+        compression-level: 0
+
+###############
+## Utilities ##
+###############
+
+  # Combine cache directories to save space
+  combine-caches:
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    needs: build
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get -y update && sudo apt-get -y install ccache
+
+      # Fetch new cache changes from this workflow run, if any
+      - name: Fetch updated buildroot packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: keystone-*-buildroot-dl
+
+      - name: Fetch updated ccaches
+        uses: actions/download-artifact@v4
+        with:
+          pattern: keystone-*-ccache
+
+      - name: Check which caches to update
+        id: check-caches
+        run: |
+          rm -f .update-buildroot-dl .update-ccache
+          if [[ $(find . -maxdepth 1 -name "keystone-*-buildroot-dl" | wc -l) -eq 0 ]]; then
+            # No caches to update
+            echo "BUILDROOT_DL_UPDATE=false" >> "$GITHUB_OUTPUT"
+            echo "Not updating Buildroot downloads"
+          else
+            echo "BUILDROOT_DL_UPDATE=true" >> "$GITHUB_OUTPUT"
+            touch .update-buildroot-dl
+          fi
+
+          if [[ $(find . -maxdepth 1 -name "keystone-*-ccache" | wc -l) -eq 0 ]]; then
+            # No caches to update
+            echo "BUILDROOT_CCACHE_UPDATE=false" >> "$GITHUB_OUTPUT"
+            echo "Not updating compiler cache"
+          else
+            # Merge ccache directories
+            echo "BUILDROOT_CCACHE_UPDATE=true" >> "$GITHUB_OUTPUT"
+            touch .update-ccache
+          fi
+
+      - name: Restore buildroot packages
+        uses: actions/cache/restore@v4
+        if: ${{ needs.build.outputs.buildroot-dl-matched-key && steps.check-caches.outputs.BUILDROOT_DL_UPDATE == 'true' }}
+        with:
+          path: dl.tar
+          key: ${{ needs.build.outputs.buildroot-dl-matched-key }}
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        if: ${{ needs.build.outputs.ccache-matched-key && steps.check-caches.outputs.BUILDROOT_CCACHE_UPDATE == 'true' }}
+        with:
+          path: ccache.tar.xz
+          key: ${{ needs.build.outputs.ccache-matched-key }}
+
+      - name: Prepare output directories
+        run: |
+          rm -rf buildroot/dl buildroot-ccache
+          mkdir -p buildroot/dl/ buildroot-ccache/
+          if [[ -f dl.tar ]]; then
+            tar -xf dl.tar -C buildroot
+          fi
+
+          if [[ -f ccache.tar.xz ]]; then
+            tar -xf ccache.tar.xz
+          fi
+
+      - name: Merge caches
+        run: |
+          if [[ -f .update-buildroot-dl ]]; then
+            for d in keystone-*-buildroot-dl; do
+              tar --skip-old-files -xf "$d/dl.tar" -C buildroot
+            done
+          fi
+
+          if [[ -f .update-ccache ]]; then
+            RESULTDIR="$PWD/buildroot-ccache"
+            for d in keystone-*-ccache; do
+              TMPDIR=$(mktemp -d)
+              tar -xf "$d/ccache.tar.xz" -C "$TMPDIR"
+              ( cd "$TMPDIR/buildroot-ccache" ; cp -a --parents ? "$RESULTDIR" )
+              rm -rf "$TMPDIR"
+            done
+            ccache -d "$RESULTDIR" -c
+          fi
+
+      - name: Recompress caches
+        run: |
+          rm -f dl.tar ccache.tar.xz
+          if [[ -f .update-buildroot-dl ]]; then
+            tar -C buildroot --exclude='**/git' -cf dl.tar dl/
+          fi
+
+          if [[ -f .update-ccache ]]; then
+            tar -cf - buildroot-ccache | xz -9 -T0 > ccache.tar.xz
+          fi
+
+      - name: Save buildroot download cache
+        uses: actions/cache/save@v4
+        if: ${{ steps.check-caches.outputs.BUILDROOT_DL_UPDATE == 'true' }}
+        with:
+          path: dl.tar
+          key: ${{ needs.build.outputs.buildroot-dl-primary-key }}
+
+      - name: Save ccache
+        uses: actions/cache/save@v4
+        if: ${{ steps.check-caches.outputs.BUILDROOT_CCACHE_UPDATE == 'true' }}
+        with:
+          path: ccache.tar.xz
+          key: ${{ needs.build.outputs.ccache-primary-key }}
+
+###########
+## Tests ##
+###########
+
+  # Generic runtime tests, which only need to run once (on the host)
+  test-runtime-format:
+    runs-on: ubuntu-latest
+    steps:
+    # We don't need submodules here since Keystone is a monorepo!
+    - name: Checkout Keystone
+      uses: actions/checkout@v4
+      with:
+        submodules: 'false'
+
+    - name: Check format
+      run: |
+        sudo apt-get update && sudo apt-get install -y clang-format
+        FORMAT=$(git help -a | grep clang-format | tail -n1)
+        cd runtime ; FORMAT_RESULT=$(git $FORMAT)
+        [ "$FORMAT_RESULT" = "no modified files to format" ] || [ "$FORMAT_RESULT" = "clang-format did not modify any files" ]
+
+  test-runtime-functionality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Keystone
+      uses: actions/checkout@v4
+      with:
+        submodules: 'true'
+
+    - name: Run ctest
+      run: |
+        cd runtime
+        mkdir -p obj/test
+        pushd obj/test
+        cmake ../../test
+        make
+        ctest -VV || ( cat obj/test/Testing/Temporary/LastTest.log && false )
+        popd
+
+  # Build tests, which are run for each supported platform
+  test-runtime-build:
+    needs: build
+    uses: ./.github/workflows/build-runtime.yml
+
+  # System tests, which are run for simulatable and self-hostable platforms
+  test-system-functionality:
+    needs: build
+    uses: ./.github/workflows/test-system.yml
