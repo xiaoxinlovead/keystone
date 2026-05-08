@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/CMakeFiles/eyrie-test-eyrie"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/CMakeFiles/eyrie-test-eyrie.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/CMakeFiles/eyrie-test-eyrie-complete.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-build.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-configure.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-download.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-install.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-mkdir.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-patch.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie-stamp/eyrie-test-eyrie-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"eyrie-test-eyrie"
+		],
+		"name" : "eyrie-test-eyrie"
+	}
+}

@@ -1,0 +1,36 @@
+util/CMakeFiles/rt_util.dir/rt_util.c.o: \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/util/rt_util.c \
+ /opt/riscv/sysroot/usr/include/stdc-predef.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/mm/mm.h \
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include/stddef.h \
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include/stdint.h \
+ /opt/riscv/sysroot/usr/include/stdint.h \
+ /opt/riscv/sysroot/usr/include/bits/libc-header-start.h \
+ /opt/riscv/sysroot/usr/include/features.h \
+ /opt/riscv/sysroot/usr/include/features-time64.h \
+ /opt/riscv/sysroot/usr/include/bits/wordsize.h \
+ /opt/riscv/sysroot/usr/include/bits/timesize.h \
+ /opt/riscv/sysroot/usr/include/sys/cdefs.h \
+ /opt/riscv/sysroot/usr/include/bits/long-double.h \
+ /opt/riscv/sysroot/usr/include/gnu/stubs.h \
+ /opt/riscv/sysroot/usr/include/gnu/stubs-lp64d.h \
+ /opt/riscv/sysroot/usr/include/bits/types.h \
+ /opt/riscv/sysroot/usr/include/bits/typesizes.h \
+ /opt/riscv/sysroot/usr/include/bits/time64.h \
+ /opt/riscv/sysroot/usr/include/bits/wchar.h \
+ /opt/riscv/sysroot/usr/include/bits/stdint-intn.h \
+ /opt/riscv/sysroot/usr/include/bits/stdint-uintn.h \
+ /opt/riscv/sysroot/usr/include/bits/stdint-least.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/mm/vm_defs.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/util/rt_util.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/util/regs.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/util/printf.h \
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include/stdarg.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/tmplib/uaccess.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/tmplib/asm/asm.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/tmplib/asm/csr.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/tmplib/linux/const.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/mm/vm.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/mm/common.h \
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include/stdbool.h \
+ /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/include/call/sbi.h

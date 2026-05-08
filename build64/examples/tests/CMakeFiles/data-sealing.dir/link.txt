@@ -1,0 +1,1 @@
+/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc -Wall -Werror -nostdlib -static -T /home/yangxin/xs-env/keystone/sdk/examples/tests/app.lds CMakeFiles/data-sealing.dir/data-sealing/data-sealing.c.o -o data-sealing  ../../../sdk/build64/lib/libkeystone-eapp.a ../../../sdk/build64/lib/libkeystone-edge.a 

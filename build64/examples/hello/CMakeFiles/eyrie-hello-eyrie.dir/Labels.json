@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/CMakeFiles/eyrie-hello-eyrie"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/CMakeFiles/eyrie-hello-eyrie.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/CMakeFiles/eyrie-hello-eyrie-complete.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-build.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-configure.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-download.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-install.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-mkdir.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-patch.rule"
+		},
+		{
+			"file" : "/home/yangxin/xs-env/keystone/build64/examples/hello/runtime/src/eyrie-hello-eyrie-stamp/eyrie-hello-eyrie-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"eyrie-hello-eyrie"
+		],
+		"name" : "eyrie-hello-eyrie"
+	}
+}
