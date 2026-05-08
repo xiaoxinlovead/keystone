@@ -1,0 +1,10 @@
+--- include/hw/riscv/virt.h
++++ include/hw/riscv/virt.h
+@@ -54,6 +54,7 @@ struct RISCVVirtState {
+     bool have_aclint;
+     RISCVVirtAIAType aia_type;
+     int aia_guests;
++    char *rom;
+ };
+ 
+ enum {

@@ -1,0 +1,191 @@
+The system is: Linux - 6.8.0-110-generic - x86_64
+Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+Compiler: /opt/riscv/bin/riscv64-unknown-linux-gnu-gcc 
+Build flags: 
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+
+The C compiler identification is GNU, found in "/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/3.22.1/CompilerIdC/a.out"
+
+Checking whether the ASM compiler is GNU using "--version" matched "(GNU assembler)|(GCC)|(Free Software Foundation)":
+riscv64-unknown-linux-gnu-gcc (g5115c7e44) 15.2.0
+Copyright (C) 2025 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Detecting C compiler ABI info compiled with the following output:
+Change Dir: /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_a365d/fast && gmake[3]: Entering directory '/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp'
+/usr/bin/gmake  -f CMakeFiles/cmTC_a365d.dir/build.make CMakeFiles/cmTC_a365d.dir/build
+gmake[4]: Entering directory '/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o
+/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc   -v -o CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake-3.22/Modules/CMakeCCompilerABI.c
+Using built-in specs.
+COLLECT_GCC=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc
+Target: riscv64-unknown-linux-gnu
+Configured with: /home/yangxin/riscv-gnu-toolchain/gcc/configure --target=riscv64-unknown-linux-gnu --prefix=/opt/riscv --with-sysroot=/opt/riscv/sysroot --with-pkgversion=g5115c7e44 --with-system-zlib --enable-shared --enable-tls --enable-languages=c,c++,fortran --disable-libmudflap --disable-libssp --disable-libquadmath --disable-libsanitizer --disable-nls --disable-bootstrap --src=.././gcc --disable-default-pie --disable-multilib --with-abi=lp64d --with-arch=rv64imafdcv_zba_zbb_zbc_zbs_zfh_zfhmin_zic64b_zicbom_zicbop_zicboz_zicntr_zihpm_zicsr_zifencei_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zbkb_zbkc_zbkx_zvbb_zvfh_zvfhmin_zvkt_zvl128b_zvl64b --with-isa-spec=20191213 'CFLAGS_FOR_TARGET=-O2    -mcmodel=medlow' 'CXXFLAGS_FOR_TARGET=-O2    -mcmodel=medlow'
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 15.2.0 (g5115c7e44) 
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o' '-c' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_a365d.dir/'
+ /opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/cc1 -quiet -v -imultilib . /usr/share/cmake-3.22/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_a365d.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -mtls-dialect=trad -march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -version -o /tmp/ccxqi183.s
+GNU C23 (g5115c7e44) version 15.2.0 (riscv64-unknown-linux-gnu)
+	compiled by GNU C version 11.4.0, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version none
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/opt/riscv/sysroot/usr/local/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include-fixed
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/include
+ /opt/riscv/sysroot/usr/include
+End of search list.
+Compiler executable checksum: 45ce8b92d78dd6e800b5fd838ccc0642
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o' '-c' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_a365d.dir/'
+ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/bin/as -v --traditional-format -march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -o CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o /tmp/ccxqi183.s
+GNU assembler version 2.46 (riscv64-unknown-linux-gnu) using BFD version (GNU Binutils) 2.46
+COMPILER_PATH=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/bin/
+LIBRARY_PATH=/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib/:/opt/riscv/sysroot/lib/:/opt/riscv/sysroot/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o' '-c' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.'
+Linking C executable cmTC_a365d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a365d.dir/link.txt --verbose=1
+/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  -v CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o -o cmTC_a365d 
+Using built-in specs.
+COLLECT_GCC=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc
+COLLECT_LTO_WRAPPER=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/lto-wrapper
+Target: riscv64-unknown-linux-gnu
+Configured with: /home/yangxin/riscv-gnu-toolchain/gcc/configure --target=riscv64-unknown-linux-gnu --prefix=/opt/riscv --with-sysroot=/opt/riscv/sysroot --with-pkgversion=g5115c7e44 --with-system-zlib --enable-shared --enable-tls --enable-languages=c,c++,fortran --disable-libmudflap --disable-libssp --disable-libquadmath --disable-libsanitizer --disable-nls --disable-bootstrap --src=.././gcc --disable-default-pie --disable-multilib --with-abi=lp64d --with-arch=rv64imafdcv_zba_zbb_zbc_zbs_zfh_zfhmin_zic64b_zicbom_zicbop_zicboz_zicntr_zihpm_zicsr_zifencei_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zbkb_zbkc_zbkx_zvbb_zvfh_zvfhmin_zvkt_zvl128b_zvl64b --with-isa-spec=20191213 'CFLAGS_FOR_TARGET=-O2    -mcmodel=medlow' 'CXXFLAGS_FOR_TARGET=-O2    -mcmodel=medlow'
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 15.2.0 (g5115c7e44) 
+COMPILER_PATH=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/bin/
+LIBRARY_PATH=/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib/:/opt/riscv/sysroot/lib/:/opt/riscv/sysroot/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_a365d' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_a365d.'
+ /opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/collect2 -plugin /opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/liblto_plugin.so -plugin-opt=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/lto-wrapper -plugin-opt=-fresolution=/tmp/ccBQoU87.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --sysroot=/opt/riscv/sysroot --eh-frame-hdr -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -o cmTC_a365d /opt/riscv/sysroot/usr/lib/crt1.o /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crti.o /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtbegin.o -L/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0 -L/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib -L/opt/riscv/sysroot/lib -L/opt/riscv/sysroot/usr/lib CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtend.o /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_a365d' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_a365d.'
+gmake[4]: Leaving directory '/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp'
+gmake[3]: Leaving directory '/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp'
+
+
+
+Parsed C implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include]
+    add: [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include-fixed]
+    add: [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/include]
+    add: [/opt/riscv/sysroot/usr/include]
+  end of search list found
+  collapse include dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include] ==> [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include]
+  collapse include dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include-fixed] ==> [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include-fixed]
+  collapse include dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/include] ==> [/opt/riscv/riscv64-unknown-linux-gnu/include]
+  collapse include dir [/opt/riscv/sysroot/usr/include] ==> [/opt/riscv/sysroot/usr/include]
+  implicit include dirs: [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include;/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include-fixed;/opt/riscv/riscv64-unknown-linux-gnu/include;/opt/riscv/sysroot/usr/include]
+
+
+Parsed C implicit link information from above output:
+  link line regex: [^( *|.*[/\])(riscv64-unknown-linux-gnu-ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_a365d/fast && gmake[3]: Entering directory '/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp']
+  ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_a365d.dir/build.make CMakeFiles/cmTC_a365d.dir/build]
+  ignore line: [gmake[4]: Entering directory '/home/yangxin/xs-env/keystone/build64/examples/hello-native/runtime/src/eyrie-hello-native-eyrie/CMakeFiles/CMakeTmp']
+  ignore line: [Building C object CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o]
+  ignore line: [/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc   -v -o CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake-3.22/Modules/CMakeCCompilerABI.c]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc]
+  ignore line: [Target: riscv64-unknown-linux-gnu]
+  ignore line: [Configured with: /home/yangxin/riscv-gnu-toolchain/gcc/configure --target=riscv64-unknown-linux-gnu --prefix=/opt/riscv --with-sysroot=/opt/riscv/sysroot --with-pkgversion=g5115c7e44 --with-system-zlib --enable-shared --enable-tls --enable-languages=c c++ fortran --disable-libmudflap --disable-libssp --disable-libquadmath --disable-libsanitizer --disable-nls --disable-bootstrap --src=.././gcc --disable-default-pie --disable-multilib --with-abi=lp64d --with-arch=rv64imafdcv_zba_zbb_zbc_zbs_zfh_zfhmin_zic64b_zicbom_zicbop_zicboz_zicntr_zihpm_zicsr_zifencei_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zbkb_zbkc_zbkx_zvbb_zvfh_zvfhmin_zvkt_zvl128b_zvl64b --with-isa-spec=20191213 'CFLAGS_FOR_TARGET=-O2    -mcmodel=medlow' 'CXXFLAGS_FOR_TARGET=-O2    -mcmodel=medlow']
+  ignore line: [Thread model: posix]
+  ignore line: [Supported LTO compression algorithms: zlib zstd]
+  ignore line: [gcc version 15.2.0 (g5115c7e44) ]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o' '-c' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_a365d.dir/']
+  ignore line: [ /opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/cc1 -quiet -v -imultilib . /usr/share/cmake-3.22/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_a365d.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -mtls-dialect=trad -march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -version -o /tmp/ccxqi183.s]
+  ignore line: [GNU C23 (g5115c7e44) version 15.2.0 (riscv64-unknown-linux-gnu)]
+  ignore line: [	compiled by GNU C version 11.4.0  GMP version 6.2.1  MPFR version 4.1.0  MPC version 1.2.1  isl version none]
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [ignoring nonexistent directory "/opt/riscv/sysroot/usr/local/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include]
+  ignore line: [ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/include-fixed]
+  ignore line: [ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/include]
+  ignore line: [ /opt/riscv/sysroot/usr/include]
+  ignore line: [End of search list.]
+  ignore line: [Compiler executable checksum: 45ce8b92d78dd6e800b5fd838ccc0642]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o' '-c' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_a365d.dir/']
+  ignore line: [ /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/bin/as -v --traditional-format -march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b -mabi=lp64d -misa-spec=20191213 -o CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o /tmp/ccxqi183.s]
+  ignore line: [GNU assembler version 2.46 (riscv64-unknown-linux-gnu) using BFD version (GNU Binutils) 2.46]
+  ignore line: [COMPILER_PATH=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/bin/]
+  ignore line: [LIBRARY_PATH=/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib/:/opt/riscv/sysroot/lib/:/opt/riscv/sysroot/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o' '-c' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.']
+  ignore line: [Linking C executable cmTC_a365d]
+  ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a365d.dir/link.txt --verbose=1]
+  ignore line: [/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc  -v CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o -o cmTC_a365d ]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc]
+  ignore line: [COLLECT_LTO_WRAPPER=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/lto-wrapper]
+  ignore line: [Target: riscv64-unknown-linux-gnu]
+  ignore line: [Configured with: /home/yangxin/riscv-gnu-toolchain/gcc/configure --target=riscv64-unknown-linux-gnu --prefix=/opt/riscv --with-sysroot=/opt/riscv/sysroot --with-pkgversion=g5115c7e44 --with-system-zlib --enable-shared --enable-tls --enable-languages=c c++ fortran --disable-libmudflap --disable-libssp --disable-libquadmath --disable-libsanitizer --disable-nls --disable-bootstrap --src=.././gcc --disable-default-pie --disable-multilib --with-abi=lp64d --with-arch=rv64imafdcv_zba_zbb_zbc_zbs_zfh_zfhmin_zic64b_zicbom_zicbop_zicboz_zicntr_zihpm_zicsr_zifencei_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zbkb_zbkc_zbkx_zvbb_zvfh_zvfhmin_zvkt_zvl128b_zvl64b --with-isa-spec=20191213 'CFLAGS_FOR_TARGET=-O2    -mcmodel=medlow' 'CXXFLAGS_FOR_TARGET=-O2    -mcmodel=medlow']
+  ignore line: [Thread model: posix]
+  ignore line: [Supported LTO compression algorithms: zlib zstd]
+  ignore line: [gcc version 15.2.0 (g5115c7e44) ]
+  ignore line: [COMPILER_PATH=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/bin/]
+  ignore line: [LIBRARY_PATH=/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/:/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib/:/opt/riscv/sysroot/lib/:/opt/riscv/sysroot/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_a365d' '-march=rv64imafdcv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zaamo_zalrsc_zfh_zfhmin_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-mabi=lp64d' '-misa-spec=20191213' '-mtls-dialect=trad' '-march=rv64imafdcbv_zic64b_zicbom_zicbop_zicboz_zicntr_zicsr_zifencei_zihpm_zmmul_zaamo_zalrsc_zfh_zfhmin_zca_zcd_zba_zbb_zbc_zbkb_zbkc_zbkx_zbs_zkn_zknd_zkne_zknh_zks_zksed_zksh_zkt_zvbb_zve32f_zve32x_zve64d_zve64f_zve64x_zvfh_zvfhmin_zvkb_zvkt_zvl128b_zvl32b_zvl64b' '-dumpdir' 'cmTC_a365d.']
+  link line: [ /opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/collect2 -plugin /opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/liblto_plugin.so -plugin-opt=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/lto-wrapper -plugin-opt=-fresolution=/tmp/ccBQoU87.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --sysroot=/opt/riscv/sysroot --eh-frame-hdr -melf64lriscv -X -dynamic-linker /lib/ld-linux-riscv64-lp64d.so.1 -o cmTC_a365d /opt/riscv/sysroot/usr/lib/crt1.o /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crti.o /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtbegin.o -L/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0 -L/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib -L/opt/riscv/sysroot/lib -L/opt/riscv/sysroot/usr/lib CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtend.o /opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtn.o]
+    arg [/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/opt/riscv/libexec/gcc/riscv64-unknown-linux-gnu/15.2.0/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/ccBQoU87.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [--sysroot=/opt/riscv/sysroot] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-melf64lriscv] ==> ignore
+    arg [-X] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib/ld-linux-riscv64-lp64d.so.1] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_a365d] ==> ignore
+    arg [/opt/riscv/sysroot/usr/lib/crt1.o] ==> obj [/opt/riscv/sysroot/usr/lib/crt1.o]
+    arg [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crti.o] ==> obj [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crti.o]
+    arg [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtbegin.o] ==> obj [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtbegin.o]
+    arg [-L/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0] ==> dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0]
+    arg [-L/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib] ==> dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib]
+    arg [-L/opt/riscv/sysroot/lib] ==> dir [/opt/riscv/sysroot/lib]
+    arg [-L/opt/riscv/sysroot/usr/lib] ==> dir [/opt/riscv/sysroot/usr/lib]
+    arg [CMakeFiles/cmTC_a365d.dir/CMakeCCompilerABI.c.o] ==> ignore
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [-lc] ==> lib [c]
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtend.o] ==> obj [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtend.o]
+    arg [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtn.o] ==> obj [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtn.o]
+  collapse library dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0] ==> [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0]
+  collapse library dir [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/../../../../riscv64-unknown-linux-gnu/lib] ==> [/opt/riscv/riscv64-unknown-linux-gnu/lib]
+  collapse library dir [/opt/riscv/sysroot/lib] ==> [/opt/riscv/sysroot/lib]
+  collapse library dir [/opt/riscv/sysroot/usr/lib] ==> [/opt/riscv/sysroot/usr/lib]
+  implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+  implicit objs: [/opt/riscv/sysroot/usr/lib/crt1.o;/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crti.o;/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtbegin.o;/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtend.o;/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0/crtn.o]
+  implicit dirs: [/opt/riscv/lib/gcc/riscv64-unknown-linux-gnu/15.2.0;/opt/riscv/riscv64-unknown-linux-gnu/lib;/opt/riscv/sysroot/lib;/opt/riscv/sysroot/usr/lib]
+  implicit fwks: []
+
+

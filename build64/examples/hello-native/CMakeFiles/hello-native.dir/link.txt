@@ -1,0 +1,1 @@
+/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc -Wall -Werror CMakeFiles/hello-native.dir/eapp/eapp_native.c.o -o hello-native  -nostdlib -static ../../../sdk/build64/lib/libkeystone-eapp.a ../../../sdk/build64/lib/libkeystone-edge.a 

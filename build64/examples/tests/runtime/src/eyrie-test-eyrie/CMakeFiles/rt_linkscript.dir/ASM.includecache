@@ -1,0 +1,14 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie/runtime.ld.S
+mm/vm_defs.h
+/home/yangxin/xs-env/keystone/build64/examples/tests/runtime/src/eyrie-test-eyrie/mm/vm_defs.h
+
+include/mm/vm_defs.h
+
