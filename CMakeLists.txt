@@ -126,7 +126,7 @@ add_custom_command(OUTPUT ${qemu_system}
 )
 add_custom_command(OUTPUT ${qemu_wrkdir}/config-host.mak
   WORKING_DIRECTORY ${qemu_srcdir}
-  COMMAND ./configure --target-list=riscv${BITS}-softmmu,riscv${BITS}-linux-user
+  COMMAND ./configure --target-list=riscv${BITS}-softmmu,riscv${BITS}-linux-user --with-git-submodules=ignore
   COMMENT "Configuring QEMU"
 )
 

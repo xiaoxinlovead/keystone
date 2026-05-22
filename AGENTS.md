@@ -81,7 +81,11 @@ Patches in `patches/<submodule>/` are applied automatically via `add_patch()` ma
 
 **QEMU** builds both `riscv{BITS}-softmmu` (system emulation) and `riscv{BITS}-linux-user` (user-mode, needed for SM unit tests).
 
-Linux kernel configs are in `conf/linux{32,64}{,-sifive,-cva6}-defconfig`. Buildroot configs in `conf/qemu_riscv{32,64}_virt_defconfig`.
+Linux kernel configs are in `conf/linux{32,64}{,-sifive,-cva6}-defconfig` (full defconfigs) plus `conf/xiangshan_defconfig` (fragment style). Buildroot configs in `conf/qemu_riscv{32,64}_virt_defconfig`.
+
+Fragment-style configs (like `xiangshan_defconfig`) are NOT standalone — combine with base `linux64-defconfig` using Linux's `scripts/kconfig/merge_config.sh -m` before `olddefconfig`.
+
+To add a new platform variant in `CMakeLists.txt`, follow the existing pattern: declare a `CACHE BOOL` variable → `elseif` branch → override `linux_defconfig` and `buildroot_config` → set `initramfs true` → optionally set `SM_PLATFORM` for the SM platform dir (`sm/plat/<name>/`).
 
 All build artifacts go to the cmake binary dir (`build64/`). The build is fully out-of-source.
 
@@ -98,6 +102,10 @@ CI tests these runtime option combinations: Default, FREEMEM, LINUX_SYSCALL+FREE
 ### Linux kernel: `rseq_execve` / `rseq_syscall` redefinition
 
 Both `include/linux/sched.h` and `include/linux/rseq.h` define the same `static inline` stub functions. Fix: remove duplicate definitions from `sched.h` (the `#else` block for `rseq_execve` and `rseq_syscall`).
+
+### Linux kernel: modpost unresolved symbols with fragment configs
+
+`linux-symvers` target runs `make modules` **before** the final `vmlinux`+initramfs build (CMakeLists.txt line 222-225). If a platform config fragment disables kernel subsystems (e.g. BLOCK, SYSFS) but the base defconfig has `CONFIG_FOO=m` for drivers depending on those subsystems, modpost fails. Fix: add `# CONFIG_FOO is not set` to the fragment, or fix the base defconfig.
 
 ### SDK: missing `stdint.h` / `cstdint` with newer toolchains
 

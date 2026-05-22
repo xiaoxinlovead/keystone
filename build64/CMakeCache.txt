@@ -15,7 +15,7 @@
 ########################
 
 //Path to a program.
-CMAKE_ADDR2LINE:FILEPATH=/usr/bin/addr2line
+CMAKE_ADDR2LINE:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-addr2line
 
 //NoDesc
 CMAKE_AR:STRING=/opt/riscv/bin/riscv64-unknown-linux-gnu-ar
@@ -25,11 +25,11 @@ CMAKE_ASM_COMPILER:STRING=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_ASM_COMPILER_AR:FILEPATH=/usr/bin/gcc-ar
+CMAKE_ASM_COMPILER_AR:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc-ar
 
 //A wrapper around 'ranlib' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_ASM_COMPILER_RANLIB:FILEPATH=/usr/bin/gcc-ranlib
+CMAKE_ASM_COMPILER_RANLIB:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc-ranlib
 
 //Flags used by the ASM compiler during all build types.
 CMAKE_ASM_FLAGS:STRING=
@@ -58,11 +58,11 @@ CMAKE_CXX_COMPILER:STRING=/opt/riscv/bin/riscv64-unknown-linux-gnu-g++
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_CXX_COMPILER_AR:FILEPATH=/usr/bin/gcc-ar-11
+CMAKE_CXX_COMPILER_AR:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc-ar
 
 //A wrapper around 'ranlib' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_CXX_COMPILER_RANLIB:FILEPATH=/usr/bin/gcc-ranlib-11
+CMAKE_CXX_COMPILER_RANLIB:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc-ranlib
 
 //NoDesc
 CMAKE_CXX_COMPILER_WORKS:STRING=1
@@ -87,11 +87,11 @@ CMAKE_C_COMPILER:STRING=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_C_COMPILER_AR:FILEPATH=/usr/bin/gcc-ar-11
+CMAKE_C_COMPILER_AR:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc-ar
 
 //A wrapper around 'ranlib' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_C_COMPILER_RANLIB:FILEPATH=/usr/bin/gcc-ranlib-11
+CMAKE_C_COMPILER_RANLIB:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc-ranlib
 
 //NoDesc
 CMAKE_C_COMPILER_WORKS:STRING=1
@@ -162,7 +162,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELEASE:STRING=
 CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
 //Path to a program.
-CMAKE_NM:FILEPATH=/usr/bin/nm
+CMAKE_NM:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-nm
 
 //NoDesc
 CMAKE_OBJCOPY:STRING=/opt/riscv/bin/riscv64-unknown-linux-gnu-objcopy
@@ -180,10 +180,10 @@ CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 CMAKE_PROJECT_NAME:STATIC=keystone
 
 //Path to a program.
-CMAKE_RANLIB:FILEPATH=/usr/bin/ranlib
+CMAKE_RANLIB:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-ranlib
 
 //Path to a program.
-CMAKE_READELF:FILEPATH=/usr/bin/readelf
+CMAKE_READELF:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-readelf
 
 //Flags used by the linker during the creation of shared libraries
 // during all build types.
@@ -233,7 +233,7 @@ CMAKE_STATIC_LINKER_FLAGS_RELEASE:STRING=
 CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
 //Path to a program.
-CMAKE_STRIP:FILEPATH=/usr/bin/strip
+CMAKE_STRIP:FILEPATH=/opt/riscv/bin/riscv64-unknown-linux-gnu-strip
 
 //NoDesc
 CMAKE_SYSTEM_NAME:STRING=Linux

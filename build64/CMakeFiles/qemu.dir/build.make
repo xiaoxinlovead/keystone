@@ -78,7 +78,7 @@ CMakeFiles/qemu: ../qemu/build/riscv64-softmmu/qemu-system-riscv64
 
 ../qemu/build/config-host.mak:
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --blue --bold --progress-dir=/home/yangxin/xs-env/keystone/build64/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Configuring QEMU"
-	cd /home/yangxin/xs-env/keystone/qemu && ./configure --target-list=riscv64-softmmu,riscv64-linux-user
+	cd /home/yangxin/xs-env/keystone/qemu && ./configure --target-list=riscv64-softmmu,riscv64-linux-user --with-git-submodules=ignore
 
 qemu-rom.patch.applied:
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --blue --bold --progress-dir=/home/yangxin/xs-env/keystone/build64/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Applying qemu-rom.patch"

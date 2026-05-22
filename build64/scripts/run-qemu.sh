@@ -1,6 +1,6 @@
 #!/bin/sh
 
-export HOST_PORT=5578;
+export HOST_PORT=5055;
 
 echo "**** Running QEMU SSH on port ${HOST_PORT} ****";
 

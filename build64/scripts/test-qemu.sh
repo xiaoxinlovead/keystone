@@ -14,12 +14,12 @@ upload_to_qemu() {
         SCP_OPTIONS+=" -O"
     fi
     echo "Uploading \"$(basename $1)\" to QEMU ..."
-    scp ${SSH_OPTIONS} ${SCP_OPTIONS} -P 5578 $1 root@localhost:.
+    scp ${SSH_OPTIONS} ${SCP_OPTIONS} -P 5055 $1 root@localhost:.
 }
 
 run_in_qemu() {
     echo "Running \"$1\" in QEMU ..."
-    ssh ${SSH_OPTIONS} -p 5578 root@localhost "$1"
+    ssh ${SSH_OPTIONS} -p 5055 root@localhost "$1"
 }
 
 run_in_qemu "insmod keystone-driver.ko"

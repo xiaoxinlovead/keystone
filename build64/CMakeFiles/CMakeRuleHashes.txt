@@ -1,5 +1,5 @@
 # Hashes of file build rules.
-4dabfd5f491cf158cc42fc0e694a3f17 ../qemu/build/config-host.mak
+adaa59e2cac78d5b4818aa77f5d9d4cd ../qemu/build/config-host.mak
 de5d8237d0b01a1a94bf62553f450b12 ../qemu/build/riscv64-softmmu/qemu-system-riscv64
 24dfcf4f23fa60a8abf2d5a426254051 CMakeFiles/bootrom
 53bacd5bcfbc4ac1943d3ae44385e3d5 CMakeFiles/bootrom-sync
