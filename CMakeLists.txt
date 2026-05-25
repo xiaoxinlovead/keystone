@@ -45,6 +45,10 @@ set(LINUX_SIFIVE FALSE CACHE BOOL "Build linux for sifive")
 set(sifive ${LINUX_SIFIVE})
 message(STATUS "sifive=${sifive}")
 
+set(XIANGSHAN FALSE CACHE BOOL "Build for Xiangshan platform")
+set(xiangshan ${XIANGSHAN})
+message(STATUS "xiangshan=${xiangshan}")
+
 if((CMAKE_BUILD_TYPE MATCHES "Debug") OR (CMAKE_BUILD_TYPE MATCHES "RelWithDebInfo"))
   message(STATUS "Using debug symbols")
   set(CFLAGS -g)
@@ -61,7 +65,7 @@ else()
   set(ABI lp64d)
 endif()
 
-set(ISA rv${BITS}imafdc)
+set(ISA rv${BITS}imafdc_zifencei)
 set(confdir ${CMAKE_SOURCE_DIR}/conf)
 set(patchdir ${CMAKE_SOURCE_DIR}/patches)
 set(cross_compile riscv${BITS}-unknown-linux-gnu-)
@@ -93,6 +97,11 @@ elseif(cva6)
   set(buildroot_config ${confdir}/riscv${BITS}_cva6_defconfig)
   message(STATUS "Using buildroot defconfig: ${buildroot_config}")
 	set(initramfs true)
+elseif(xiangshan)
+  message(STATUS "Xiangshan configs. Forcing initramfs=y")
+  set(linux_defconfig ${confdir}/linux64-xiangshan-defconfig)
+  message(STATUS "Using Linux defconfig: ${linux_defconfig}")
+  set(initramfs true)
 endif()
 
 if(NOT DEFINED linux_defconfig)
@@ -202,9 +211,13 @@ if(initramfs)
   execute_process(COMMAND id -g OUTPUT_VARIABLE gid)
   string(STRIP ${gid} gid)
   add_custom_command(OUTPUT ${initramfs_sysroot} COMMAND mkdir -p ${initramfs_sysroot})
-  add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot} ${linux_srcdir} "linux-symvers" "buildroot" ${buildroot_wrkdir}/images/rootfs.tar
+  add_custom_command(OUTPUT ${initramfs_sysroot}/.extracted
+    DEPENDS ${initramfs_sysroot} ${buildroot_wrkdir}/images/rootfs.tar
     COMMAND tar -xpf ${buildroot_wrkdir}/images/rootfs.tar -C ${initramfs_sysroot} --exclude ./dev --exclude ./usr/share/locale
-    COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> ${initramfs_sysroot}/etc/inittab
+    COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND touch ${initramfs_sysroot}/.extracted
+  )
+  add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot}/.extracted ${linux_srcdir} "linux-symvers"
     COMMAND $(MAKE) -C ${linux_srcdir}
       O=${linux_wrkdir} CONFIG_INITRAMFS_SOURCE="${confdir}/initramfs.txt ${initramfs_sysroot}"
       CONFIG_INITRAMFS_ROOT_UID=${uid} CONFIG_INITRAMFS_ROOT_GID=${gid}
@@ -267,8 +280,11 @@ add_custom_target("tests" DEPENDS examples)
 ## COMPONENT: image
 ###############################################################################
 
-add_custom_target("image-deps" DEPENDS "driver" ${overlay_root}
-  COMMAND find ${driver_wrkdir} -name "*.ko" -exec cp {} ${overlay_root} \\\\;
+add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
+  COMMAND mkdir -p ${overlay_root}/keystone
+  COMMAND find ${driver_wrkdir} -name "*.ko" -exec cp {} ${overlay_root}/keystone \\\\;
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello-runner ${overlay_root}/keystone/ 2>/dev/null || true
 )
 add_custom_target("image" DEPENDS "buildroot" "sm"
   COMMENT "Generating image"

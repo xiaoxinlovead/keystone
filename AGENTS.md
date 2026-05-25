@@ -139,3 +139,64 @@ SDK and runtime each have `.clang-format` and `make format` target (SDK also run
 - CI: CircleCI (`docker.io/keystoneenclaveorg/keystone:init-rv64gc`, `init-rv32gc`)
 - Docs: https://docs.keystone-enclave.org
 - Prebuilt toolchain: `https://keystone-enclave.eecs.berkeley.edu/files/riscv-toolchain-lp64d-rv64gc-2021.01.<dist>.7z`
+
+## Xiangshan (XS) adaptation
+
+### Goal
+Adapt Keystone enclave framework to run on the Xiangshan (Kunminghu) RISC-V processor.
+
+### Key constraints
+- Xiangshan boots firmware .bin files only: output is `fw_payload.bin`
+- Linux kernel 6.12.27 via initramfs (no block device, `CONFIG_BLOCK is not set`)
+- Testing on NEMU simulator (not QEMU)
+- First milestone: build the full stack and run a hello enclave on XS
+
+### External reference directories
+| Path | Role |
+|---|---|
+| `/home/yangxin/xs-env/` | Xiangshan full dev environment (RTL, NEMU, keystone fork on `xiangshanv3` branch) |
+| `/home/yangxin/xiangshan-opensbi-linuxkernel/` | **Reference** build flow: Linux 6.12.27 + OpenSBI + riscv-rootfs for XS |
+| `…/nemu_board/configs/xiangshan_defconfig` | Authoritative xiangshan kernel defconfig (52-line fragment) |
+| `…/nemu_board/dts/DTSGen.py` | DTS generation script |
+| `…/riscv-rootfs/rootfsimg/` | Initramfs variants for reference |
+
+### Build differences vs QEMU virt
+| Aspect | QEMU virt | Xiangshan |
+|---|---|---|
+| Boot output | fw_payload.bin | fw_payload.bin |
+| UART | SiFive (0x10000000) | 8250 DW (0x310B0000) |
+| Interrupt controller | PLIC | AIA (APLIC + IMSIC) |
+| Rootfs | buildroot (**keep**) | buildroot (**keep**) |
+| SM platform | generic | generic + xiangshan_kmh override module |
+| Simulator | QEMU virt machine | NEMU (no QEMU fix needed) |
+
+### Implementation strategy: Path C
+
+**Skeleton from keystone, config reference from xiangshan-opensbi-linuxkernel.**
+
+| Layer | Source | Details |
+|---|---|---|
+| Build orchestration | **keystone** | `CMakeLists.txt`, cmake + make, all custom targets |
+| Rootfs | **keystone** | buildroot (not riscv-rootfs) |
+| Driver / SDK / Runtime | **keystone** | `linux-keystone-driver/`, `sdk/`, `runtime/` |
+| Linux kernel defconfig | **reference** | `nemu_board/configs/xiangshan_defconfig` (52-line fragment) |
+| UART / IRQ / Memory layout | **reference** | 8250 DW (0x310B0000), AIA (APLIC+IMSIC), DRAM at 0x80000000 |
+| DTS generation | **reference** | `nemu_board/dts/DTSGen.py` |
+| initramfs structure | **reference** | `riscv-rootfs/rootfsimg/` variants |
+
+Core principle: do NOT replace keystone's build pipeline. Use xiangshan-opensbi-linuxkernel ONLY for porting hardware-specific config values.
+
+### Documentation requirement
+
+**Every source code modification must be documented** in `docs/xiangshan/porting-notes.md`
+with file path, line number, before/after diff, and reason. This ensures the full
+patch set can be cherry-picked or replayed by others.
+
+### Build commands summary
+
+### Implementation plan
+1. Create `conf/linux64-xiangshan-defconfig` — full standalone defconfig for Linux 6.12.27 + keystone requirements (MODULES, SYSFS, BINFMT_SCRIPT/ELF), seeded from `nemu_board/configs/xiangshan_defconfig`
+2. Add `-DXIANGHSHAN=y` branch in `CMakeLists.txt` (CACHE BOOL → elseif → override defconfigs → initramfs=true)
+3. Add `sm/plat/generic/xiangshan_kmh.c` platform override module (FDT match for xiangshan DTB, register in objects.mk)
+4. Create `conf/riscv64_xiangshan_defconfig` buildroot config
+5. Verify: cmake + make → load fw_payload.bin on NEMU → run hello enclave
