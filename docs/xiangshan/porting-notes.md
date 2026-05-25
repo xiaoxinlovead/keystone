@@ -218,17 +218,123 @@ Pre-built DTB at `nemu_board/dts/build/xiangshan.dtb` (1 hart, 128MB DRAM).
 | 9 | `CMakeLists.txt` image-deps | mod | Enclave binaries in initramfs |
 | 10 | `CMakeLists.txt` initramfs | mod | Fix tar extraction (stamp file) |
 | 11 | SM build procedure | proc | DTB embedding via `FW_FDT_PATH` |
+| 12 | `sm/opensbi/` | repl | OpenSBI v1→v3 (xiangshan opensbi submodule) |
+| 13 | `sm/src/sm-sbi.h`, `sm-sbi.c`, `sm-sbi-opensbi.c` | mod | v3 ecall handler API adaptation |
+| 14 | `sm/plat/generic/platform.c` | mod | v3 platform.c + sm_init hook |
+| 15 | `sm/plat/generic/objects.mk` | mod | v3 compile flags, ecall carray reg |
+| 16 | `sm/src/stubs.c` | new | stubs for disabled SM functions |
+| 17 | `sm/plat/generic/Kconfig` | new | v3 platform Kconfig |
+| 18 | `sm/plat/generic/configs/defconfig` | new | v3 platform feature defconfig |
+| 19 | `sm/plat/generic/config.mk` | mod | cppflags for v3 |
+
+## OpenSBI v1 → v3 replacement
+
+### 12. Replace `sm/opensbi/` with xiangshan OpenSBI v3
+
+**Removed:** 284 files of OpenSBI v1.x tracked directly in parent repo.
+
+**Added:** Git submodule pointing to `git@github.com:xiaoxinlovead/opensbi.git`,
+branch `hellovector` (OpenSBI v3 with NEMU board support).
+
+```bash
+git rm -r --cached sm/opensbi/
+# commit removal
+git submodule add -b hellovector git@github.com:xiaoxinlovead/opensbi.git sm/opensbi
+```
+
+Added to `.gitmodules`:
+```
+[submodule "opensbi"]
+    path = sm/opensbi
+    url = git@github.com:xiaoxinlovead/opensbi.git
+    branch = hellovector
+```
+
+**Reason:** keystone's OpenSBI v1.x cannot boot on NEMU/Xiangshan.
+The xiangshan-opensbi-linuxkernel project validated OpenSBI v3 with NEMU.
+v3 requires `-fPIE` linker support, so the toolchain was switched from
+`riscv64-unknown-elf-` to `riscv64-unknown-linux-gnu-` for the SM build.
+
+### 13. SBI ecall handler API adaptation (v1 → v3)
+
+**Modified:** `sm/src/sm-sbi.h`, `sm/src/sm-sbi.c`, `sm/src/sm-sbi-opensbi.c`
+
+v1 handler signature:
+```c
+int (* handle)(unsigned long extid, unsigned long funcid,
+               const struct sbi_trap_regs *regs,
+               unsigned long *out_val,
+               struct sbi_trap_info *out_trap);
+```
+
+v3 handler signature:
+```c
+int (* handle)(unsigned long extid, unsigned long funcid,
+               struct sbi_trap_regs *regs,
+               struct sbi_ecall_return *out);
+```
+
+Changes made:
+- `sbi_sm_run/resume/exit/stop_enclave`: replaced `struct sbi_trap_info *out_trap`
+  parameter with `struct sbi_ecall_return *out`
+- `sbi_trap_redirect(regs, out_trap)` → `out->skip_regs_update = true`
+  (v3 ecall framework handles trap redirection by checking `skip_regs_update`)
+- `*out_val = x` → `out->value = x`
+- Removed `const` from `regs` parameter (v3 handler passes non-const)
+- Registered extension via `carray-sbi_ecall_exts-y` in objects.mk
+
+### 14. platform.c — v3 base with SM hook
+
+**Modified:** `sm/plat/generic/platform.c`
+
+Replaced keystone-modified v1 platform.c with OpenSBI v3 default platform.c,
+adding only `#include "sm.h"` and `sm_init(cold_boot)` call in `generic_final_init()`.
+
+The v3 platform.c uses `struct fdt_driver` (not `struct platform_override`)
+for platform override modules — this change is pending (#2.5).
+
+### 15. objects.mk — v3 build system compatibility
+
+**Modified:** `sm/plat/generic/objects.mk`
+
+- Moved `-I../src` from config.mk to objects.mk (v3 ignores config.mk)
+- Added `carray-sbi_ecall_exts-y += ecall_keystone_enclave` for ecall registration
+- Added `platform-objs-y += platform.o` (v3 platform)
+- Added `platform-objs-y += ../../src/stubs.o` for disabled function stubs
+- Temporarily disabled: `sbi_trap_hack.c`, `ipi.c`, platform override modules
+
+### 16. stubs.c — stubs for temporarily disabled SM functions
+
+**New file:** `sm/src/stubs.c`
+
+Provides dummy implementations and data symbols:
+- `send_and_sync_pmp_ipi()` — PMP IPI synchronization (from ipi.c)
+- `sbi_trap_handler_keystone_enclave()` — enclave trap handler (from sbi_trap_hack.c)
+- `sanctum_sm_hash/signature/public_key/secret_key`, `sanctum_dev_public_key` —
+  secure boot key symbols (from the disabled secure boot patch)
+- `platform_override_modules[]` — empty platform override array
+
+### 17-18. v3 platform Kconfig and defconfig
+
+**New files:**
+- `sm/plat/generic/Kconfig` — copied from opensbi v3 platform/generic/Kconfig
+- `sm/plat/generic/configs/defconfig` — minimal defconfig enabling FDT serial,
+  IRQ chip (PLIC, APLIC, IMSIC), IPI, and timer support
+
+### 19. config.mk — include path fix
+
+**Modified:** `sm/plat/generic/config.mk`
+
+Added `platform-cppflags-y = -I$(src_dir)/include -I$(src)/../src` as backup
+include path. Note: v3 ignores config.mk; the effective include path is set
+in objects.mk via `platform-cflags-y`.
 
 ## Commands
 
 ### Set up build environment
 
 ```bash
-# On xiangshan-opensbi-linuxkernel
-source env.sh
-
-# On keystone
-source ./source.sh
+source ./source.sh                 # sets $RISCV, $KEYSTONE_SDK_DIR
 ```
 
 ### Build
@@ -237,16 +343,6 @@ source ./source.sh
 mkdir build64-xs && cd build64-xs
 cmake .. -DXIANGSHAN=ON
 make -j$(nproc)
-```
-
-### Embed DTB and build SM
-
-```bash
-make -C sm/opensbi O=build64-xs/sm.build PLATFORM_DIR=sm/plat/generic \
-  CROSS_COMPILE=riscv64-unknown-elf- FW_PAYLOAD=y \
-  FW_PAYLOAD_PATH=build64-xs/linux.build/arch/riscv/boot/Image \
-  FW_FDT_PATH=xiangshan-opensbi-linuxkernel/nemu_board/dts/build/xiangshan.dtb \
-  PLATFORM_RISCV_XLEN=64 PLATFORM_RISCV_ISA=rv64imafdc_zifencei PLATFORM_RISCV_ABI=lp64d
 ```
 
 ### Run on NEMU

@@ -33,15 +33,17 @@ unsigned long sbi_sm_destroy_enclave(unsigned long eid)
   return ret;
 }
 
-unsigned long sbi_sm_run_enclave(struct sbi_trap_regs *regs, unsigned long eid)
+unsigned long sbi_sm_run_enclave(struct sbi_trap_regs *regs, unsigned long eid,
+                                 struct sbi_ecall_return *out)
 {
   regs->a0 = run_enclave(regs, (unsigned int) eid);
   regs->mepc += 4;
-  sbi_trap_exit(regs);
+  out->skip_regs_update = true;
   return 0;
 }
 
-unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long eid)
+unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long eid,
+                                     struct sbi_ecall_return *out)
 {
   unsigned long ret;
   ret = resume_enclave(regs, (unsigned int) eid);
@@ -49,24 +51,26 @@ unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long ei
     regs->a0 = ret;
   regs->mepc += 4;
 
-  sbi_trap_exit(regs);
+  out->skip_regs_update = true;
   return 0;
 }
 
-unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retval)
+unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retval,
+                                   struct sbi_ecall_return *out)
 {
   regs->a0 = exit_enclave(regs, cpu_get_enclave_id());
   regs->a1 = retval;
   regs->mepc += 4;
-  sbi_trap_exit(regs);
+  out->skip_regs_update = true;
   return 0;
 }
 
-unsigned long sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request)
+unsigned long sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request,
+                                   struct sbi_ecall_return *out)
 {
   regs->a0 = stop_enclave(regs, request, cpu_get_enclave_id());
   regs->mepc += 4;
-  sbi_trap_exit(regs);
+  out->skip_regs_update = true;
   return 0;
 }
 

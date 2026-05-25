@@ -49,6 +49,9 @@ set(XIANGSHAN FALSE CACHE BOOL "Build for Xiangshan platform")
 set(xiangshan ${XIANGSHAN})
 message(STATUS "xiangshan=${xiangshan}")
 
+set(XS_FDT_PATH "" CACHE STRING "Path to Xiangshan DTB for embedding in fw_payload.bin")
+set(xs_fdt ${XS_FDT_PATH})
+
 if((CMAKE_BUILD_TYPE MATCHES "Debug") OR (CMAKE_BUILD_TYPE MATCHES "RelWithDebInfo"))
   message(STATUS "Using debug symbols")
   set(CFLAGS -g)
@@ -102,6 +105,10 @@ elseif(xiangshan)
   set(linux_defconfig ${confdir}/linux64-xiangshan-defconfig)
   message(STATUS "Using Linux defconfig: ${linux_defconfig}")
   set(initramfs true)
+  if(NOT xs_fdt)
+    set(xs_fdt /home/yangxin/xiangshan-opensbi-linuxkernel/nemu_board/dts/build/xiangshan.dtb)
+    message(STATUS "Using default FDT: ${xs_fdt}")
+  endif()
 endif()
 
 if(NOT DEFINED linux_defconfig)
@@ -219,11 +226,12 @@ if(initramfs)
   )
   add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot}/.extracted ${linux_srcdir} "linux-symvers"
     COMMAND $(MAKE) -C ${linux_srcdir}
-      O=${linux_wrkdir} CONFIG_INITRAMFS_SOURCE="${confdir}/initramfs.txt ${initramfs_sysroot}"
+      O=${linux_wrkdir} "CONFIG_INITRAMFS_SOURCE=${confdir}/initramfs.txt ${initramfs_sysroot}"
       CONFIG_INITRAMFS_ROOT_UID=${uid} CONFIG_INITRAMFS_ROOT_GID=${gid}
       CONFIG_DEVTMPFS=y CONFIG_DEVTMPFS_MOUNT=y
       CROSS_COMPILE=${cross_compile} ARCH=riscv
     COMMENT "Building linux (initramfs)"
+    VERBATIM
   )
 else()
   add_custom_command(OUTPUT ${linux_image} DEPENDS ${linux_srcdir} "linux-symvers"
@@ -258,12 +266,10 @@ add_custom_target("driver" ALL DEPENDS ${driver_srcdir} ${linux_srcdir} "linux-s
 ## COMPONENT: security monitor (sm)
 ###############################################################################
 
-add_patch("sm/opensbi" "opensbi-firmware-secure-boot.patch" ${sm_srcdir}/opensbi sm_patches)
-add_custom_target("sm" ALL DEPENDS "linux" ${sm_wrkdir_exists} ${sm_patches} WORKING_DIRECTORY ${sm_wrkdir}
-  COMMAND ${sm_srcdir}/opensbi/scripts/carray.sh -i ${sm_srcdir}/plat/generic/platform_override_modules.carray > ${sm_srcdir}/plat/generic/platform_override_modules.c  
-  COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/${platform}
-  CROSS_COMPILE=riscv${BITS}-unknown-elf- FW_PAYLOAD_PATH=${linux_image} FW_PAYLOAD=y PLATFORM_RISCV_XLEN=${BITS}
-  PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI}
+add_custom_target("sm" ALL DEPENDS "linux" ${sm_wrkdir_exists} WORKING_DIRECTORY ${sm_wrkdir}
+  COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/generic
+  CROSS_COMPILE=${cross_compile} FW_PAYLOAD_PATH=${linux_image} FW_PAYLOAD=y PLATFORM_RISCV_XLEN=${BITS}
+  PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000
   COMMENT "Building sm"
   )
 

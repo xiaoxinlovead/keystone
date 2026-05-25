@@ -7,6 +7,7 @@
 
 #include <sbi/sbi_types.h>
 #include <sbi/sbi_trap.h>
+#include <sbi/sbi_ecall.h>
 
 unsigned long
 sbi_sm_create_enclave(unsigned long *out_val, uintptr_t create_args);
@@ -15,16 +16,20 @@ unsigned long
 sbi_sm_destroy_enclave(unsigned long eid);
 
 unsigned long
-sbi_sm_run_enclave(struct sbi_trap_regs *regs, unsigned long eid);
+sbi_sm_run_enclave(struct sbi_trap_regs *regs, unsigned long eid,
+                   struct sbi_ecall_return *out);
 
 unsigned long
-sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retval);
+sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retval,
+                    struct sbi_ecall_return *out);
 
 unsigned long
-sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request);
+sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request,
+                    struct sbi_ecall_return *out);
 
 unsigned long
-sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long eid);
+sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long eid,
+                      struct sbi_ecall_return *out);
 
 unsigned long
 sbi_sm_attest_enclave(uintptr_t report, uintptr_t data, uintptr_t size);

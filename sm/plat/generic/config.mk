@@ -8,7 +8,7 @@
 #
 
 # Compiler flags
-platform-cppflags-y =
+platform-cppflags-y = -I$(src_dir)/include -I$(src)/../src
 platform-cflags-y = -I../src
 platform-asflags-y =
 platform-ldflags-y =

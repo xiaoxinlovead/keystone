@@ -15,9 +15,8 @@
 #include "cpu.h"
 
 static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long funcid,
-                     const struct sbi_trap_regs *regs,
-                     unsigned long *out_val,
-                     struct sbi_trap_info *out_trap)
+                     struct sbi_trap_regs *regs,
+                     struct sbi_ecall_return *out)
 {
   uintptr_t retval;
 
@@ -35,21 +34,21 @@ static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long
 
   switch (funcid) {
     case SBI_SM_CREATE_ENCLAVE:
-      retval = sbi_sm_create_enclave(out_val, regs->a0);
+      retval = sbi_sm_create_enclave(&out->value, regs->a0);
       break;
     case SBI_SM_DESTROY_ENCLAVE:
       retval = sbi_sm_destroy_enclave(regs->a0);
       break;
     case SBI_SM_RUN_ENCLAVE:
-      retval = sbi_sm_run_enclave((struct sbi_trap_regs*) regs, regs->a0);
+      retval = sbi_sm_run_enclave(regs, regs->a0, out);
       __builtin_unreachable();
       break;
     case SBI_SM_RESUME_ENCLAVE:
-      retval = sbi_sm_resume_enclave((struct sbi_trap_regs*) regs, regs->a0);
+      retval = sbi_sm_resume_enclave(regs, regs->a0, out);
       __builtin_unreachable();
       break;
     case SBI_SM_RANDOM:
-      *out_val = sbi_sm_random();
+      out->value = sbi_sm_random();
       retval = 0;
       break;
     case SBI_SM_ATTEST_ENCLAVE:
@@ -59,11 +58,11 @@ static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long
       retval = sbi_sm_get_sealing_key(regs->a0, regs->a1, regs->a2);
       break;
     case SBI_SM_STOP_ENCLAVE:
-      retval = sbi_sm_stop_enclave((struct sbi_trap_regs*) regs, regs->a0);
+      retval = sbi_sm_stop_enclave(regs, regs->a0, out);
       __builtin_unreachable();
       break;
     case SBI_SM_EXIT_ENCLAVE:
-      retval = sbi_sm_exit_enclave((struct sbi_trap_regs*) regs, regs->a0);
+      retval = sbi_sm_exit_enclave(regs, regs->a0, out);
       __builtin_unreachable();
       break;
     case SBI_SM_CALL_PLUGIN:
@@ -79,6 +78,7 @@ static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long
 }
 
 struct sbi_ecall_extension ecall_keystone_enclave = {
+  .name = "keystone",
   .extid_start = SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE,
   .extid_end = SBI_EXT_EXPERIMENTAL_KEYSTONE_ENCLAVE,
   .handle = sbi_ecall_keystone_enclave_handler,
