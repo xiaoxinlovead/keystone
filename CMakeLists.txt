@@ -104,6 +104,8 @@ elseif(xiangshan)
   message(STATUS "Xiangshan configs. Forcing initramfs=y")
   set(linux_defconfig ${confdir}/linux64-xiangshan-defconfig)
   message(STATUS "Using Linux defconfig: ${linux_defconfig}")
+  set(buildroot_config ${confdir}/riscv64_xiangshan_defconfig)
+  message(STATUS "Using buildroot defconfig: ${buildroot_config}")
   set(initramfs true)
   if(NOT xs_fdt)
     set(xs_fdt /home/yangxin/xiangshan-opensbi-linuxkernel/nemu_board/dts/build/xiangshan.dtb)
@@ -221,7 +223,14 @@ if(initramfs)
   add_custom_command(OUTPUT ${initramfs_sysroot}/.extracted
     DEPENDS ${initramfs_sysroot} ${buildroot_wrkdir}/images/rootfs.tar
     COMMAND tar -xpf ${buildroot_wrkdir}/images/rootfs.tar -C ${initramfs_sysroot} --exclude ./dev --exclude ./usr/share/locale
+    COMMAND echo "::once:/bin/echo === Keystone init -- mounting devtmpfs ===" >> ${initramfs_sysroot}/etc/inittab || true
     COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND echo "::once:/bin/echo === Keystone init -- loading keystone driver ===" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND echo "::once:/bin/echo === Keystone init -- running hello enclave ===" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND echo "::sysinit:/root/keystone/hello-runner /root/keystone/hello /root/keystone/eyrie-rt" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND echo "::once:/bin/echo === Keystone init -- spawning shell ===" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> ${initramfs_sysroot}/etc/inittab || true
     COMMAND touch ${initramfs_sysroot}/.extracted
   )
   add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot}/.extracted ${linux_srcdir} "linux-symvers"
@@ -266,12 +275,22 @@ add_custom_target("driver" ALL DEPENDS ${driver_srcdir} ${linux_srcdir} "linux-s
 ## COMPONENT: security monitor (sm)
 ###############################################################################
 
-add_custom_target("sm" ALL DEPENDS "linux" ${sm_wrkdir_exists} WORKING_DIRECTORY ${sm_wrkdir}
+add_custom_target("sm" ALL DEPENDS "linux" "buildroot" ${sm_wrkdir_exists} WORKING_DIRECTORY ${sm_wrkdir}
   COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/generic
   CROSS_COMPILE=${cross_compile} FW_PAYLOAD_PATH=${linux_image} FW_PAYLOAD=y PLATFORM_RISCV_XLEN=${BITS}
   PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000
+  COMMAND ln -sf fw_payload.bin platform/generic/firmware/fw_jump.bin
+  COMMAND ln -sf fw_payload.elf platform/generic/firmware/fw_jump.elf
   COMMENT "Building sm"
   )
+
+# Symlink fw_jump.bin -> fw_payload.bin for test package dependencies
+add_custom_command(OUTPUT ${fw_bin} ${fw_elf}
+  COMMAND ln -sf fw_payload.bin ${fw_bin}
+  COMMAND ln -sf fw_payload.elf ${fw_elf}
+  WORKING_DIRECTORY ${sm_wrkdir}/platform/${platform}/firmware
+  DEPENDS sm
+)
 
 ###############################################################################
 ## COMPONENT: tests
@@ -291,6 +310,7 @@ add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
   COMMAND find ${driver_wrkdir} -name "*.ko" -exec cp {} ${overlay_root}/keystone \\\\;
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello ${overlay_root}/keystone/ 2>/dev/null || true
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello-runner ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/eyrie-rt ${overlay_root}/keystone/ 2>/dev/null || true
 )
 add_custom_target("image" DEPENDS "buildroot" "sm"
   COMMENT "Generating image"

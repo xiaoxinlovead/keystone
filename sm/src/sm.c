@@ -131,8 +131,6 @@ void sm_init(bool cold_boot)
     /* only the cold-booting hart will execute these */
     sbi_printf("[SM] Initializing ... hart [%lx]\n", csr_read(mhartid));
 
-    sbi_ecall_register_extension(&ecall_keystone_enclave);
-
     sm_region_id = smm_init();
     if(sm_region_id < 0) {
       sbi_printf("[SM] intolerable error - failed to initialize SM memory");

@@ -54,7 +54,7 @@ include_directories(include)
 ## Build recipes ##
 ###################
 
-add_compile_options(-Wall -Werror -fPIC -fno-builtin -std=c11 -g)
+add_compile_options(-Wall -Werror -fPIC -fno-builtin -std=c11 -g -march=rv64gc -mabi=lp64d)
 
 # Generate all the library targets
 add_subdirectory(call)

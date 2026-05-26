@@ -7,13 +7,15 @@
 #include <sbi/sbi_hart.h>
 #include <sbi/sbi_illegal_insn.h>
 #include <sbi/sbi_ipi.h>
-#include <sbi/sbi_misaligned_ldst.h>
+#include <sbi/sbi_trap_ldst.h>
+#include <sbi/sbi_string.h>
 #include <sbi/sbi_timer.h>
 #include <sbi/sbi_trap.h>
 
 static void sbi_trap_error(const char *msg, int rc,
-				      ulong mcause, ulong mtval, ulong mtval2,
-				      ulong mtinst, struct sbi_trap_regs *regs)
+			      ulong mcause, ulong mtval, ulong mtval2,
+			      ulong mtinst, struct sbi_trap_regs *regs,
+			      struct sbi_ecall_return *out)
 {
 	u32 hartid = current_hartid();
 
@@ -60,7 +62,7 @@ static void sbi_trap_error(const char *msg, int rc,
 	sbi_printf("%s: hart%d: %s=0x%" PRILX "\n", __func__, hartid, "t6",
 		   regs->t6);
 
-  sbi_sm_exit_enclave(regs, rc);
+  sbi_sm_exit_enclave(regs, rc, out);
 }
 
 
@@ -86,26 +88,36 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
 	const char *msg = "trap handler failed";
 	ulong mcause = csr_read(CSR_MCAUSE);
 	ulong mtval = csr_read(CSR_MTVAL), mtval2 = 0, mtinst = 0;
-	struct sbi_trap_info trap;
+	struct sbi_trap_context tcntx;
+	struct sbi_trap_info *trap = &tcntx.trap;
+	struct sbi_ecall_return out;
 
 	if (misa_extension('H')) {
 		mtval2 = csr_read(CSR_MTVAL2);
 		mtinst = csr_read(CSR_MTINST);
 	}
 
+	sbi_memcpy(&tcntx.regs, regs, sizeof(*regs));
+	tcntx.trap.cause = mcause;
+	tcntx.trap.tval = mtval;
+	tcntx.trap.tval2 = mtval2;
+	tcntx.trap.tinst = mtinst;
+	tcntx.trap.gva = 0;
+	tcntx.prev_context = NULL;
+
 	if (mcause & (1UL << (__riscv_xlen - 1))) {
 		mcause &= ~(1UL << (__riscv_xlen - 1));
 		switch (mcause) {
 		case IRQ_M_TIMER: {
       regs->mepc -= 4;
-      sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT);
+      sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
       regs->a0 = SBI_ERR_SM_ENCLAVE_INTERRUPTED;
       regs->mepc += 4;
 			break;
                       }
 		case IRQ_M_SOFT: {
       regs->mepc -= 4;
-      sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT);
+      sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
       regs->a0 = SBI_ERR_SM_ENCLAVE_INTERRUPTED;
       regs->mepc += 4;
 			break;
@@ -119,34 +131,38 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
 
 	switch (mcause) {
 	case CAUSE_ILLEGAL_INSTRUCTION:
-		rc  = sbi_illegal_insn_handler(mtval, regs);
+		rc  = sbi_illegal_insn_handler(&tcntx);
 		msg = "illegal instruction handler failed";
+		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
 	case CAUSE_MISALIGNED_LOAD:
-		rc = sbi_misaligned_load_handler(mtval, mtval2, mtinst, regs);
+		rc = sbi_misaligned_load_handler(&tcntx);
 		msg = "misaligned load handler failed";
+		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
 	case CAUSE_MISALIGNED_STORE:
-		rc  = sbi_misaligned_store_handler(mtval, mtval2, mtinst, regs);
+		rc  = sbi_misaligned_store_handler(&tcntx);
 		msg = "misaligned store handler failed";
+		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
 	case CAUSE_SUPERVISOR_ECALL:
 	case CAUSE_MACHINE_ECALL:
-		rc  = sbi_ecall_handler(regs);
+		rc  = sbi_ecall_handler(&tcntx);
 		msg = "ecall handler failed";
+		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
 	default:
 		/* If the trap came from S or U mode, redirect it there */
-		trap.epc = regs->mepc;
-		trap.cause = mcause;
-		trap.tval = mtval;
-		trap.tval2 = mtval2;
-		trap.tinst = mtinst;
-		rc = sbi_trap_redirect(regs, &trap);
+		trap->cause = mcause;
+		trap->tval = mtval;
+		trap->tval2 = mtval2;
+		trap->tinst = mtinst;
+		trap->gva = 0;
+		rc = sbi_trap_redirect(regs, trap);
 		break;
 	};
 
 trap_error:
 	if (rc)
-		sbi_trap_error(msg, rc, mcause, mtval, mtval2, mtinst, regs);
+		sbi_trap_error(msg, rc, mcause, mtval, mtval2, mtinst, regs, &out);
 }

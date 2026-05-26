@@ -5,6 +5,7 @@
 #include <sbi/sbi_console.h>
 #include <sbi/sbi_hsm.h>
 #include <sbi/sbi_domain.h>
+#include <sbi/sbi_hartmask.h>
 #include "ipi.h"
 #include "pmp.h"
 
@@ -20,13 +21,15 @@ void sbi_pmp_ipi_local_update(struct sbi_tlb_info *__info)
 
 void send_and_sync_pmp_ipi(int region_idx, int type, uint8_t perm)
 {
-  ulong mask = 0;
+  struct sbi_hartmask mask;
   ulong source_hart = current_hartid();
   struct sbi_tlb_info tlb_info;
+
+  SBI_HARTMASK_INIT(&mask);
   sbi_hsm_hart_interruptible_mask(sbi_domain_thishart_ptr(), &mask);
 
   SBI_TLB_INFO_INIT(&tlb_info, type, 0, region_idx, perm,
       sbi_pmp_ipi_local_update, source_hart);
-  sbi_tlb_request(mask, 0, &tlb_info);
+  sbi_tlb_request(sbi_hartmask_bits(&mask)[0], 0, &tlb_info);
 }
 
