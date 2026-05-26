@@ -345,6 +345,156 @@ cmake .. -DXIANGSHAN=ON
 make -j$(nproc)
 ```
 
+### 16. Fix: Remove redundant SBI ecall registration in `sm.c`
+
+**File**: `sm/src/sm.c` line 134
+
+**Before**:
+```c
+sbi_ecall_register_extension(&ecall_keystone_enclave);
+```
+
+**After**: Removed
+
+**Reason**: OpenSBI v3 framework automatically registers all extensions in
+`sbi_ecall_exts[]` via `sbi_ecall_init()` (called from `init_coldboot()`).
+The `ecall_keystone_enclave` extension's `register_extensions` callback
+(`sm/src/sm-sbi-opensbi.c:87`) already calls `sbi_ecall_register_extension()`.
+The direct call in `sm_init()` was a leftover from the OpenSBI v1.x era that
+caused a double registration, returning `SBI_EINVAL (-3)`:
+
+```
+sbi_ecall_init: [0] name=keyston failed ret=-3
+init_coldboot: ecall init failed (error -3)
+```
+
+### 17. Revert: rename `.name` from `"keyston"` back to `"keystone"`
+
+**File**: `sm/src/sm-sbi-opensbi.c` line 92
+
+**Before**:
+```c
+.name = "keyston",
+```
+
+**After**:
+```c
+.name = "keystone",
+```
+
+**Reason**: OpenSBI `struct sbi_ecall_extension` has `char name[8]`.
+`"keystone"` is exactly 8 characters, which fits (without `\0`).
+Debug printing uses `%.8s` format specifier, so no overflow.
+The truncation to `"keyston"` (7 chars + `\0`) was unnecessary.
+
+### 18. Xiangshan buildroot config + console setup
+
+**New file**: `conf/riscv64_xiangshan_defconfig`
+**Modified**: `CMakeLists.txt` lines 103-111, lines 224-227
+
+Before this change, xiangshan reused the QEMU buildroot config
+(`qemu_riscv64_virt_defconfig`), which had no getty configured.
+The system booted to a login prompt requiring `root` / `sifive`.
+
+**Changes**:
+
+1. Copied `conf/qemu_riscv64_virt_defconfig` → `conf/riscv64_xiangshan_defconfig`
+2. Getty DISABLED — shell spawned directly on `/dev/console` via `::respawn:-/bin/sh`
+   in inittab. This avoids hvc0 getty input issues while the DTS specifies
+   `console=hvc0` but `/dev/console` handles input correctly.
+3. Keystone driver auto-load + hello enclave auto-run added to inittab
+   (see section 20).
+4. Set `buildroot_config` in CMakeLists.txt xiangshan branch:
+   ```cmake
+   set(buildroot_config ${confdir}/riscv64_xiangshan_defconfig)
+   ```
+
+### 20. Fix: /dev/console interactive shell + auto-run keystone hello
+
+**File**: `CMakeLists.txt` lines 224-227 (initramfs build section)
+
+getty on hvc0 did not accept keyboard input. Fixed by:
+- Disabling buildroot getty (removes `hvc0::respawn:/sbin/getty ...` from inittab)
+- Adding `::respawn:-/bin/sh` to use `/dev/console` directly
+- Adding `::sysinit:` entries to auto-load keystone driver and run hello
+
+**After** (inittab generation):
+```make
+COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> .../inittab
+COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> .../inittab
+COMMAND echo "::sysinit:/root/keystone/hello-runner /root/keystone/hello" >> .../inittab
+COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> .../inittab
+```
+
+**Execution order at boot**:
+1. `::sysinit:` mount devtmpfs
+2. `::sysinit:` insert keystone-driver.ko
+3. `::sysinit:` run hello-runner (enclave test)
+4. `::respawn:` interactive shell on /dev/console (via getty, with terminal echo)
+
+**Rationale**: `::respawn:-/bin/sh` gave a working shell but without terminal echo
+(typed characters invisible). getty on `/dev/console` properly initializes the
+terminal, including echo. Using `/dev/console` (not hvc0/ttyS0) is correct
+because the kernel console subsystem routes I/O through the actual console
+driver (hvc0 in this case via `console=hvc0` DTS chosen node).
+
+### 21. Fix: toolchain mismatch via full static linking
+
+**File**: `sdk/examples/CMakeLists.txt` line 33
+
+**Error** (progressive — three stages):
+```
+# Stage 1: GLIBCXX mismatch
+hello-runner: /usr/lib/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
+
+# Stage 2: glibc mismatch (after static libstdc++)
+hello-runner: /lib64/libc.so.6: version `GLIBC_2.38' not found
+hello-runner: /lib64/libc.so.6: version `GLIBC_2.35' not found
+
+# Stage 3: glibc replacement broke dropbear
+dropbear: /lib/libcrypt.so.1: undefined symbol: __snprintf, version GLIBC_PRIVATE
+```
+
+**Root cause**: buildroot (Bootlin GCC 10, glibc 2.34) and SDK (/opt/riscv
+GCC 15, glibc 2.42) use different toolchains. hello-runner links against
+GLIBCXX_3.4.32 (libstdc++) and GLIBC_2.35/2.36/2.38 symbols
+(`_dl_find_object`, `arc4random`, `__isoc23_strtoul`) from GCC 15 runtime.
+Replacing glibc wholesale broke buildroot binaries (dropbear).
+
+**Fix**: Full static linking — zero dynamic library dependencies:
+```cmake
+# sdk/examples/CMakeLists.txt
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+```
+
+**Verification**: `readelf -d hello-runner` → "There is no dynamic section in
+this file." Binary is 2.4MB, fully self-contained. Rootfs remains untouched
+(glibc 2.34, dropbear works).
+
+### 19. Fix: fw_jump.bin symlink for test package dependencies
+
+**File**: `CMakeLists.txt` lines 271-278 (sm target)
+
+**Before**:
+```cmake
+add_custom_target("sm" ALL DEPENDS "linux" ${sm_wrkdir_exists}
+  ...
+  COMMENT "Building sm"
+)
+```
+
+**After** (added two COMMAND lines):
+```cmake
+  COMMAND ln -sf fw_payload.bin platform/generic/firmware/fw_jump.bin
+  COMMAND ln -sf fw_payload.elf platform/generic/firmware/fw_jump.elf
+```
+
+**Reason**: The SM build always produces `fw_payload.bin` (via `FW_PAYLOAD=y`),
+but `${fw_bin}` and `${fw_elf}` variables point to `fw_jump.bin` / `fw_jump.elf`.
+Test packages (attestation, etc.) use `${fw_bin}` as a file dependency for
+packaging, which caused `No rule to make target 'fw_jump.bin'` errors.
+Symlinks fix this post-build.
+
 ### Run on NEMU
 
 ```bash
@@ -356,5 +506,245 @@ make -j$(nproc)
 
 ```bash
 insmod /root/keystone/keystone-driver.ko
-/root/keystone/hello-runner /root/keystone/hello
+/root/keystone/hello-runner /root/keystone/hello /root/keystone/eyrie-rt
 ```
+
+## Initramfs visibility & SM trap handler fixes
+
+### 7. Initramfs inittab — add echo visibility — `CMakeLists.txt:223-231`
+
+**Before:**
+```cmake
+COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> .../inittab || true
+COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> .../inittab || true
+COMMAND echo "::sysinit:/root/keystone/hello-runner ..." >> .../inittab || true
+COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> .../inittab || true
+```
+
+**After:** Added `::once:/bin/echo === ... ===` lines before each sysinit step:
+```cmake
+COMMAND echo "::once:/bin/echo === Keystone init: mounting devtmpfs ===" >> .../inittab || true
+COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> .../inittab || true
+COMMAND echo "::once:/bin/echo === Keystone init: loading keystone driver ===" >> .../inittab || true
+COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> .../inittab || true
+COMMAND echo "::once:/bin/echo === Keystone init: running hello enclave ===" >> .../inittab || true
+COMMAND echo "::sysinit:/root/keystone/hello-runner ..." >> .../inittab || true
+COMMAND echo "::once:/bin/echo === Keystone init: spawning shell ===" >> .../inittab || true
+COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> .../inittab || true
+```
+
+**Reason**: Previously the console showed no indication of which init step was running.
+If the `hello-runner` (a `::sysinit` command) hangs, BusyBox init never reaches the
+`getty` shell line. Echo markers let us see exactly where init stops.
+
+---
+
+### 8. Enable enclave trap handler — `sm/plat/generic/objects.mk:21-23`
+
+**Before:**
+```makefile
+#platform-objs-y += ../../src/sbi_trap_hack.o  # TODO: port to v3
+platform-objs-y += ../../src/trap.o
+#platform-objs-y += ../../src/ipi.o  # TODO: port to v3 (sbi_tlb_info API changed)
+```
+
+**After:**
+```makefile
+platform-objs-y += ../../src/sbi_trap_hack.o
+platform-objs-y += ../../src/trap.o
+platform-objs-y += ../../src/ipi.o
+```
+
+**Reason**: The SM's enclave trap handler (`sbi_trap_handler_keystone_enclave`) was
+previously an empty stub in `stubs.c` that just returned without processing any trap.
+This meant timer interrupts during enclave execution were silently ignored, causing
+the `KEYSTONE_IOC_RUN_ENCLAVE` ioctl to block indefinitely in the kernel.
+Re-enabling the real trap handler allows the SM to properly stop the enclave
+on timer interrupts (setting `SBI_ERR_SM_ENCLAVE_INTERRUPTED`) and resume it.
+
+Also enabled `ipi.c` for cross-hart PMP synchronization.
+
+---
+
+### 9. Fix sbi_trap_hack.c for OpenSBI v3 API — `sm/src/sbi_trap_hack.c`
+
+**Changes:**
+- Replaced `#include <sbi/sbi_misaligned_ldst.h>` with `#include <sbi/sbi_trap_ldst.h>`
+  (file was renamed in OpenSBI v3)
+- Added `#include <sbi/sbi_string.h>` for `sbi_memcpy`
+- Created a local `struct sbi_trap_context tcntx` on the stack to wrap `regs`
+  into the v3 `sbi_trap_context` format (which includes trap info alongside regs)
+- Updated calls to OpenSBI handlers that changed signature to take
+  `struct sbi_trap_context *` instead of `struct sbi_trap_regs *`:
+
+| Old API (v1.x) | New API (v3) |
+|---|---|
+| `sbi_illegal_insn_handler(mtval, regs)` | `sbi_illegal_insn_handler(&tcntx)` |
+| `sbi_misaligned_load_handler(mtval, mtval2, mtinst, regs)` | `sbi_misaligned_load_handler(&tcntx)` |
+| `sbi_misaligned_store_handler(mtval, mtval2, mtinst, regs)` | `sbi_misaligned_store_handler(&tcntx)` |
+| `sbi_ecall_handler(regs)` | `sbi_ecall_handler(&tcntx)` |
+| `trap.epc = regs->mepc` (before `sbi_trap_redirect`) | Removed — `sbi_trap_redirect` now reads `mepc` from `regs` directly |
+
+- After each handler call, `sbi_memcpy(regs, &tcntx.regs, ...)` copies back any
+  register modifications (e.g., ecall return values in a0/a1)
+
+**Reason**: OpenSBI v3 changed the signature of all trap-handling functions from
+taking raw `struct sbi_trap_regs *` to taking `struct sbi_trap_context *` which
+embeds regs plus trap cause/value info. Without these fixes, the re-enabled
+`sbi_trap_hack.c` would fail to compile.
+
+---
+
+### 10. Fix ipi.c for OpenSBI v3 API — `sm/src/ipi.c` (DISABLED — see note)
+
+**Note: ipi.c remains disabled in `objects.mk`** because OpenSBI v3 removed
+the `local_fn` callback field from `struct sbi_tlb_info`. The old PMP IPI
+mechanism abused `sbi_tlb_request()` with a custom callback, which is no
+longer supported. For single-hart Xiangshan setups, the empty stub in
+`stubs.c` is sufficient. Porting to `sbi_ipi_event_create()` is TODO.
+
+The code was partially updated for v3 but not enabled:
+
+**Before:**
+```c
+ulong mask = 0;
+sbi_hsm_hart_interruptible_mask(sbi_domain_thishart_ptr(), &mask);
+...
+sbi_tlb_request(mask, 0, &tlb_info);
+```
+
+**After:**
+```c
+struct sbi_hartmask mask;
+SBI_HARTMASK_INIT(&mask);
+sbi_hsm_hart_interruptible_mask(sbi_domain_thishart_ptr(), &mask);
+...
+sbi_tlb_request(sbi_hartmask_bits(&mask)[0], 0, &tlb_info);
+```
+
+Also added `#include <sbi/sbi_hartmask.h>`.
+
+**Reason**: `sbi_hsm_hart_interruptible_mask()` changed its second parameter from
+`ulong *` to `struct sbi_hartmask *` (a multi-word bitmap). The hartmask must be
+converted back to a `ulong` via `sbi_hartmask_bits(&mask)[0]` for `sbi_tlb_request()`
+which still expects a single-word bitmask.
+
+---
+
+### 11. Update stubs.c — remove replaced stubs — `sm/src/stubs.c:7-9`
+
+**Before:**
+```c
+void send_and_sync_pmp_ipi(void) { }
+void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs) { }
+```
+
+**After:**
+```c
+void send_and_sync_pmp_ipi(int region_idx, int type, uint8_t perm) { }
+```
+
+**Reason**: The real `sbi_trap_handler_keystone_enclave` in `sbi_trap_hack.c` is
+now linked, so its empty stub causes a duplicate symbol error. Removed. Also
+fixed `send_and_sync_pmp_ipi` stub signature to match the declaration in `ipi.h`
+(`void send_and_sync_pmp_ipi(int, int, uint8_t)` instead of `void`).
+
+---
+
+### 12. Add debug output to hello-runner — `sdk/examples/hello/host/host.cpp`
+
+**Before:** No output at all — silently does `enclave.init()` → `enclave.run()`.
+
+**After:** Added `fprintf(stderr, ...)` at each step:
+```cpp
+fprintf(stderr, "[hello-runner] Starting...\n");
+fprintf(stderr, "[hello-runner] Initializing enclave (eapp=%s, rt=%s)...\n", argv[1], argv[2]);
+fprintf(stderr, "[hello-runner] Registering ocall dispatch...\n");
+fprintf(stderr, "[hello-runner] Running enclave...\n");
+fprintf(stderr, "[hello-runner] Enclave completed successfully!\n");
+```
+
+Added `#include <cstdio>`.
+
+**Reason**: The hello-runner had zero user-visible output. If it hung during init
+or run, there was no way to tell which step failed. stderr output goes to the console
+(via the getty shell's tty).
+
+---
+
+### 13. Fix NULL `out` dereference in trap handler — `sm/src/sbi_trap_hack.c`
+
+**Before:**
+```c
+sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, NULL);
+sbi_sm_exit_enclave(regs, rc, NULL);
+```
+
+**After:**
+```c
+struct sbi_ecall_return out;
+sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
+sbi_sm_exit_enclave(regs, rc, &out);
+```
+
+Also updated `sbi_trap_error()` signature to accept `struct sbi_ecall_return *`.
+
+**Reason**: `sbi_sm_exit_enclave()` and `sbi_sm_stop_enclave()` in `sm-sbi.c:64,73`
+directly dereference `out->skip_regs_update = true` without NULL check. Passing
+NULL causes M-mode crash → kernel ioctl hangs forever.
+
+---
+
+### 14. Add `-march=rv64gc -mabi=lp64d` to enclave/SDK compilation
+
+**Files modified:**
+- `sdk/macros.cmake:34` — `CFLAGS` now includes `-march=rv64gc -mabi=lp64d`
+- `runtime/CMakeLists.txt:57` — added `-march=rv64gc -mabi=lp64d`
+- `sdk/examples/CMakeLists.txt:35` — added `add_compile_options(-march=rv64gc -mabi=lp64d)`
+
+**Before:** No `-march`/`-mabi` flags set anywhere in the SDK or runtime build
+chain. All components inherited the toolchain default ISA which includes V-extension
+and B-extension instructions.
+
+**After:** All enclave components (eapp, eyrie-rt, libkeystone-eapp.a) compiled
+with `-march=rv64gc`. The actual `.o` files are clean of V/B instructions.
+
+**Caveat:** The statically-linked eapp binary still shows V/B in its ELF ISA
+attribute due to the toolchain's glibc (libc.a) which was pre-compiled with
+V/B support. The eapp's `__libc_setup_tls` startup path contains V instructions
+from glibc. For full V-free enclave, a custom C library compiled without V is needed.
+
+---
+
+### 15. Fix inittab colon separator — `CMakeLists.txt:226-233`
+
+**Before:**
+```
+::once:/bin/echo === Keystone init: mounting devtmpfs ===
+```
+
+**After:**
+```
+::once:/bin/echo === Keystone init -- mounting devtmpfs ===
+```
+
+**Reason**: BusyBox inittab uses `:` as the field delimiter
+(`id:runlevel:action:process`). The 4th `:` in the echo message caused the
+process field to be truncated (e.g., `mounting devtmpfs ===` was treated as
+part of the process command, not the echo argument). This produced `sh: /:
+Permission denied` errors and the echo lines appeared out of order.
+
+---
+
+### 16. Fix `XIANGSHAN` cache corruption — cmake rebuild with DTB
+
+**Symptom:** SM built without `FW_FDT_PATH`, kernel had no device tree → no boot.
+
+**Root cause:** During cmake cache manipulation (fixing corrupted `CMAKE_C_FLAGS`),
+the `XIANGSHAN:BOOL=FALSE` entry was restored from a stale cache. Without
+`XIANGSHAN=y`, the SM was built without the Xiangshan DTB, and the
+`CONFIG_EFIVAR_FS=m` kernel module symvers issue resurfaced.
+
+**Fix:** Reconfigured with `-DXIANGSHAN=y`, disabled `EFIVAR_FS` in kernel config,
+rebuilt kernel, driver, buildroot, and SM. Verified `FW_FDT_PATH` points to
+`xiangshan-opensbi-linuxkernel/nemu_board/dts/build/xiangshan.dtb`.

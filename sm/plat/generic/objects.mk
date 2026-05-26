@@ -18,9 +18,9 @@ platform-objs-y += ../../src/sm-sbi.o
 platform-objs-y += ../../src/sm-sbi-opensbi.o
 platform-objs-y += ../../src/thread.o
 platform-objs-y += ../../src/mprv.o
-#platform-objs-y += ../../src/sbi_trap_hack.o  # TODO: port to v3
+platform-objs-y += ../../src/sbi_trap_hack.o
 platform-objs-y += ../../src/trap.o
-#platform-objs-y += ../../src/ipi.o  # TODO: port to v3 (sbi_tlb_info API changed)
+#platform-objs-y += ../../src/ipi.o  # TODO: port to v3 (sbi_ipi_event_create instead of sbi_tlb_request)
 
 # Platform object (required for 'platform' symbol)
 platform-objs-y += platform.o
