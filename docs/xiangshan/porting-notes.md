@@ -751,178 +751,101 @@ rebuilt kernel, driver, buildroot, and SM. Verified `FW_FDT_PATH` points to
 
 ---
 
-### 20. Fix: Enclave trap handling architecture + `__builtin_unreachable()` removal
+### 20. Fix: Enclave trap handling + `__builtin_unreachable()` removal (branch: `double_trap`)
 
 **Critical design insight**: In Keystone, traps inside the enclave are handled
-by the **eyrie-rt runtime (S-mode)** via `encl_trap_handler`, NOT by the SM.
-The SM's `sbi_trap_handler_keystone_enclave` only handles **M-mode interrupts**
-(timer, IPI) to pause/resume the enclave. All S/U-mode exceptions (ecalls,
-page faults) are delegated to S-mode via `medeleg` and processed by eyrie-rt.
+by the **eyrie-rt runtime (S-mode)** via `encl_trap_handler`, NOT by the SM's
+`trap_vector_enclave`. The SM's `sbi_trap_handler_keystone_enclave` only handles
+**M-mode interrupts** (timer, IPI) to pause/resume the enclave. All S/U-mode
+exceptions (ecalls, page faults) are delegated to S-mode via `medeleg`
+and processed by eyrie-rt.
+
+This design is preserved by not clearing `medeleg` in `context_switch_to_enclave`.
+The original Keystone code (commit `ecb663854`) only clears `mideleg` (to capture
+timer interrupts in M-mode). Adding `csr_write(medeleg, 0)` in the xiangshan port
+(commit `db00a0450`) would force ALL exceptions to M-mode, bypassing eyrie-rt.
 
 **Three fixes applied:**
 
-**20a. Remove `csr_write(medeleg, 0)`** — `sm/src/enclave.c:51`
+#### 20a. Remove `csr_write(medeleg, 0)` — `sm/src/enclave.c`
 
-**Before:**
-```c
-uintptr_t interrupts = 0;
-csr_write(mideleg, interrupts);
-csr_write(medeleg, interrupts);
+```diff
+ uintptr_t interrupts = 0;
+ csr_write(mideleg, interrupts);
+-csr_write(medeleg, interrupts);
 ```
 
-**After:**
-```c
-uintptr_t interrupts = 0;
-csr_write(mideleg, interrupts);
+**Diagnostic confirmed**: `medeleg=0xf4b509` preserved (bit 9 = 0 → S-mode ecall
+to M-mode, bit 8 = 1 → U-mode ecall to S-mode).
+
+#### 20b. Remove `__builtin_unreachable()` — `sm/src/sm-sbi-opensbi.c`
+
+Removed from all 4 cases: `SBI_SM_RUN_ENCLAVE`, `SBI_SM_RESUME_ENCLAVE`,
+`SBI_SM_STOP_ENCLAVE`, `SBI_SM_EXIT_ENCLAVE`.
+
+**Reason**: In OpenSBI v1.x these functions performed `mret` directly and never
+returned. In v3 they return so `sbi_ecall_handler` can apply `skip_regs_update`.
+`__builtin_unreachable()` caused the compiler to eliminate the function epilogue,
+preventing `sbi_ecall_handler` from properly skipping the `mepc += 4` update.
+
+**Diagnostic confirmed**: `sbi_ecall_handler` shows `skip=1, mepc=0xffffffffc0000000`
+(correct enclave entry).
+
+#### 20c. Add `CAUSE_USER_ECALL` handling — `sm/src/sbi_trap_hack.c`
+
+```diff
++case CAUSE_USER_ECALL:
+ case CAUSE_SUPERVISOR_ECALL:
+ case CAUSE_MACHINE_ECALL:
 ```
 
-**Reason**: `csr_write(medeleg, 0)` was added in the xiangshan port (commit
-`db00a0450`). It forces ALL exceptions to M-mode, bypassing eyrie-rt's
-S-mode trap handler. The original Keystone code (commit `ecb663854`) only
-clears `mideleg` to capture timer interrupts in M-mode. Clearing `medeleg`
-breaks the delegation model and causes ecalls from the enclave to go to the
-SM's trap handler (which was previously a stub and now is not configured to
-handle them properly).
+**Reason**: Enclave app runs in U-mode, ecall from U-mode causes mcause=8
+which was unhandled. Now forwarded to `sbi_ecall_handler`.
 
-**20b. Remove `__builtin_unreachable()`** — `sm/src/sm-sbi-opensbi.c:44,48,62,66`
+### 21. Add `stvec=0` safety check — `sm/src/sbi_trap_hack.c`
 
-**Before:**
-```c
-case SBI_SM_RUN_ENCLAVE:
-    retval = sbi_sm_run_enclave(regs, regs->a0, out);
-    __builtin_unreachable();
-    break;
+```diff
+ default:
++    if (!csr_read(CSR_STVEC)) {
++        msg = "enclave trap with no S-mode handler (stvec=0)";
++        goto trap_error;
++    }
 ```
 
-**After (all 4 cases):**
-```c
-case SBI_SM_RUN_ENCLAVE:
-    retval = sbi_sm_run_enclave(regs, regs->a0, out);
-    break;
-```
+**Reason**: `clean_state()` initializes `stvec=0`. If a fault occurs before
+eyrie-rt sets up its `stvec`, `sbi_trap_redirect` would jump to VA 0 → infinite
+fault cascade. This fix exits the enclave cleanly instead.
 
-**Reason**: In OpenSBI v1.x, `context_switch_to_enclave()` performed the `mret`
-directly and never returned. In v3, the function returns so `sbi_ecall_handler`
-can apply `skip_regs_update`. `__builtin_unreachable()` tells the compiler the
-return path is unreachable, causing the optimizer to eliminate the function
-epilogue → `sbi_ecall_handler` never reaches its `skip_regs_update` check →
-enclave `mepc` is not set correctly → system hangs on entry.
+### 22. Diagnosed but NOT applied: `sfence.vma` after satp write
 
-Diagnostic confirmed: after fix, `sbi_ecall_handler` shows `skip=1,
-mepc=0xffffffffc0000000` (correct enclave entry).
+Added then reverted. PMP_SET macros already contain `sfence.vma` which covers
+TLB coherency. No evidence this was a problem.
 
-**20c. Add `CAUSE_USER_ECALL` handling** — `sm/src/sbi_trap_hack.c:151`
+### 23. Diagnosed but NOT applied: `mscratch` in `switch_vector_enclave()`
 
-**Before:**
-```c
-case CAUSE_SUPERVISOR_ECALL:
-case CAUSE_MACHINE_ECALL:
-    rc = sbi_ecall_handler(&tcntx);
-```
+**Hypothesis**: `_trap_handler` saves but never restores `mscratch` after each
+trap. `trap_vector_enclave` expects `mscratch` to point to SBI scratch area.
+If corrupted, `csrrw tp, mscratch, tp` loads wrong address → `sd t0, 96(tp)`
+writes to random physical address → bus error → NEMU double trap.
 
-**After:**
-```c
-case CAUSE_USER_ECALL:
-case CAUSE_SUPERVISOR_ECALL:
-case CAUSE_MACHINE_ECALL:
-    rc = sbi_ecall_handler(&tcntx);
-```
+**Test**: Added `csr_write(CSR_MSCRATCH, sbi_scratch_thishart_ptr())` to
+`switch_vector_enclave()`. Result: no change, 'T' still absent.
 
-**Reason**: The hello enclave app runs in U-mode and calls `ecall` for legacy
-putchar (ext_id=1). ecall from U-mode causes mcause=8 (`CAUSE_USER_ECALL`),
-which was not handled by the SM trap handler. It fell through to the `default`
-branch which called `sbi_trap_redirect()` — redirecting the ecall to S-mode's
-`stvec`. Before eyrie-rt sets up its own `stvec`, this value is 0, causing the
-redirect to jump to VA 0 → instruction page fault → infinite redirect cascade
-→ system hang without visible output. Now U-mode ecalls are properly forwarded
-to OpenSBI's ecall handler.
+### Open issue: double trap at PC 0xffffffffc000546c
 
----
+After applying fixes 20a-20c and 21, the enclave executes ~780M instructions
+but no M-mode trap ever reaches `trap_vector_enclave` (confirmed by assembly-level
+UART writes of 'T' and 'M' that never appear). The system eventually halts with
+NEMU reporting "CRITICAL ERROR: trap when mnstatus.nmie close" at runtime PC
+`0xffffffffc000546c` (inside `rt_util_getrandom`).
 
-### 17. Fix: Add `CAUSE_USER_ECALL` handling — `sm/src/sbi_trap_hack.c:151`
+Key observations:
+- `medeleg=0xf4b509` (bit 9=0) means S-mode ecalls SHOULD go to M-mode
+- `mideleg` is properly cleared (timer → M-mode)
+- `mtvec` points to `trap_vector_enclave` (verified in `[SM] entering enclave` print)
+- Eyrie-rt disassembly confirms `sbi_random` executes `ecall` instruction
+- Yet `trap_vector_enclave` assembly's very first instruction (UART write) never executes
 
-**Before:**
-```c
-case CAUSE_SUPERVISOR_ECALL:
-case CAUSE_MACHINE_ECALL:
-    rc  = sbi_ecall_handler(&tcntx);
-```
-
-**After:**
-```c
-case CAUSE_USER_ECALL:
-case CAUSE_SUPERVISOR_ECALL:
-case CAUSE_MACHINE_ECALL:
-    rc  = sbi_ecall_handler(&tcntx);
-```
-
-**Reason**: The hello enclave app runs in U-mode and calls `ecall` to print each
-character (ext_id=1 legacy putchar). ecall from U-mode causes mcause=8
-(`CAUSE_USER_ECALL`), which was not handled by the SM trap handler. It fell
-through to the `default` branch which called `sbi_trap_redirect()` — redirecting
-the ecall to S-mode's `stvec`. Before the runtime sets up its own `stvec`, this
-value is 0, causing the redirect to jump to VA 0 → instruction page fault →
-infinite redirect cascade → system hang without visible output.
-
----
-
-### 18. Fix: Check `stvec != 0` before redirect in SM trap handler — `sm/src/sbi_trap_hack.c:157`
-
-**Before:**
-```c
-default:
-    /* If the trap came from S or U mode, redirect it there */
-    trap->cause = mcause;
-    ...
-    rc = sbi_trap_redirect(regs, trap);
-    break;
-```
-
-**After:**
-```c
-default:
-    /* If the trap came from S or U mode, redirect it there.
-     * But if stvec is 0 (enclave hasn't set up its trap handler yet),
-     * redirecting to VA 0 causes infinite fault cascade. Exit instead. */
-    if (!csr_read(CSR_STVEC)) {
-        msg = "enclave trap with no S-mode handler (stvec=0)";
-        goto trap_error;
-    }
-    trap->cause = mcause;
-    ...
-    rc = sbi_trap_redirect(regs, trap);
-    break;
-```
-
-**Reason**: `clean_state()` in `thread.c:111` initializes `stvec=0`. When the
-enclave runtime first boots and encounters any unhandled exception (e.g., page
-fault on an unmapped data page), `sbi_trap_redirect()` reads `stvec=0` and
-sets `mepc=0`, causing the S-mode execution to jump to VA 0. Since VA 0 is
-unmapped, this triggers another fault, creating an infinite redirect loop.
-The fix exits the enclave cleanly instead, allowing the host to detect the error.
-
----
-
-### 19. Fix: Add `sfence.vma` after satp change — `sm/src/enclave.c:75`
-
-**Before:**
-```c
-    csr_write(satp, enclaves[eid].encl_satp);
-  }
-```
-
-**After:**
-```c
-    csr_write(satp, enclaves[eid].encl_satp);
-    asm volatile("sfence.vma" ::: "memory");
-  }
-```
-
-**Reason**: RISC-V privileged spec requires `sfence.vma` after changing `satp`
-to ensure stale TLB entries from the previous address space are flushed. On
-QEMU's relaxed TLB model this omission is benign, but on Xiangshan NEMU's
-more realistic TLB implementation, stale host OS TLB entries can remain after
-the `mret` into the enclave, causing the first instruction fetch to land on
-the wrong physical page. The PMP_SET macros contain their own `sfence.vma`
-but those are purpose-specific for PMP coherency. An explicit flush here
-guarantees the enclave's new page table takes effect before execution begins.
+This suggests the S-mode `ecall` instruction is either being delegated to S-mode
+despite `medeleg=0`, or the M-mode trap entry sequence itself fails on the
+Xiangshan NEMU simulator.
