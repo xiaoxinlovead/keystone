@@ -105,29 +105,29 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
 	tcntx.trap.gva = 0;
 	tcntx.prev_context = NULL;
 
-	if (mcause & (1UL << (__riscv_xlen - 1))) {
-		mcause &= ~(1UL << (__riscv_xlen - 1));
-		switch (mcause) {
-		case IRQ_M_TIMER: {
+  if (mcause & (1UL << (__riscv_xlen - 1))) {
+    mcause &= ~(1UL << (__riscv_xlen - 1));
+    switch (mcause) {
+    case IRQ_M_TIMER: {
       regs->mepc -= 4;
       sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
       regs->a0 = SBI_ERR_SM_ENCLAVE_INTERRUPTED;
       regs->mepc += 4;
-			break;
+      break;
                       }
-		case IRQ_M_SOFT: {
+    case IRQ_M_SOFT: {
       regs->mepc -= 4;
       sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
       regs->a0 = SBI_ERR_SM_ENCLAVE_INTERRUPTED;
       regs->mepc += 4;
-			break;
+      break;
                      }
-		default:
-			msg = "unhandled external interrupt";
-			goto trap_error;
-		};
-		return;
-	}
+    default:
+      msg = "unhandled external interrupt";
+      goto trap_error;
+    };
+    return;
+  }
 
 	switch (mcause) {
 	case CAUSE_ILLEGAL_INSTRUCTION:
@@ -145,6 +145,7 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
 		msg = "misaligned store handler failed";
 		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
+	case CAUSE_USER_ECALL:
 	case CAUSE_SUPERVISOR_ECALL:
 	case CAUSE_MACHINE_ECALL:
 		rc  = sbi_ecall_handler(&tcntx);
@@ -152,7 +153,13 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
 		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
 	default:
-		/* If the trap came from S or U mode, redirect it there */
+		/* If the trap came from S or U mode, redirect it there.
+		 * But if stvec is 0 (enclave hasn't set up its trap handler yet),
+		 * redirecting to VA 0 causes infinite fault cascade. Exit instead. */
+		if (!csr_read(CSR_STVEC)) {
+			msg = "enclave trap with no S-mode handler (stvec=0)";
+			goto trap_error;
+		}
 		trap->cause = mcause;
 		trap->tval = mtval;
 		trap->tval2 = mtval2;
