@@ -1,9 +1,9 @@
-set(eapp_bin hello)
+set(eapp_bin hello-new)
 set(eapp_src eapp/hello.c)
-set(host_bin hello-runner)
+set(host_bin hello-new-runner)
 set(host_src host/host.cpp)
-set(package_name "hello.ke")
-set(package_script "./hello-runner enclave.pkg")
+set(package_name "hello-new.ke")
+set(package_script "./hello-new-runner enclave.pkg")
 set(pkg_bin enclave.pkg)
 
 if(RISCV32)
@@ -13,24 +13,18 @@ else()
 endif()
 
 # eapp
-
 add_executable(${eapp_bin} ${eapp_src})
-
 target_link_libraries(${eapp_bin} "-static" "-nostartfiles" "-Wl,-e,_start")
 
 # host
-
 add_executable(${host_bin} ${host_src})
 target_link_libraries(${host_bin} -static ${KEYSTONE_LIB_HOST} ${KEYSTONE_LIB_EDGE})
 
-# add target for Eyrie runtime (see keystone.cmake)
-
+# Eyrie runtime
 set(eyrie_files_to_copy .options_log eyrie-rt)
-add_eyrie_runtime(${eapp_bin}-eyrie
-  ${eyrie_plugins}
-  ${eyrie_files_to_copy})
+add_eyrie_runtime(${eapp_bin}-eyrie ${eyrie_plugins} ${eyrie_files_to_copy})
 
-# flat package: combine eyrie-rt + hello into one .pkg file
+# flat package
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${pkg_bin}
   COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/pkg-flat.py
           ${CMAKE_CURRENT_BINARY_DIR}/eyrie-rt
@@ -41,8 +35,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${pkg_bin}
 add_custom_target(${eapp_bin}-pkg ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${pkg_bin})
 add_dependencies(${eapp_bin}-pkg ${eapp_bin}-eyrie ${eapp_bin})
 
-# add target for packaging (see keystone.cmake)
-
+# keystone package
 set(pkg_files_to_copy ${pkg_bin})
 add_keystone_package(${eapp_bin}-package
   ${package_name}
@@ -50,6 +43,4 @@ add_keystone_package(${eapp_bin}-package
   ${pkg_files_to_copy} ${host_bin})
 
 add_dependencies(${eapp_bin}-package ${eapp_bin}-pkg)
-
-# add package to the top-level target
 add_dependencies(examples ${eapp_bin}-package)

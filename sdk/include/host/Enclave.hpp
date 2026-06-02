@@ -49,12 +49,17 @@ class Enclave {
   Error loadUntrusted();
   bool mapElf(ElfFile* file);
   Error loadElf(ElfFile* file);
+  Error loadFlatEnclave(const char* pkgpath);
   Error validate_and_hash_enclave(struct runtime_params_t args);
 
   bool initFiles(const char*, const char*);
   bool initDevice();
   bool prepareEnclave(uintptr_t alternatePhysAddr);
   bool initMemory();
+
+  /* flat binary cached values */
+  uintptr_t flat_rt_entry;
+  uintptr_t flat_user_entry;
 
  public:
   Enclave();

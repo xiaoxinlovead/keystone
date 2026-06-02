@@ -1,0 +1,20 @@
+#!/bin/sh
+# Keystone hello enclave auto-start
+echo "Starting keystone hello enclave..."
+
+insmod /keystone/keystone-driver.ko 2>/dev/null || true
+
+# Debug: check what's happening
+echo "misc:" && cat /proc/misc 2>/dev/null | grep keystone
+echo "ls /dev/:" && ls /dev/keystone* 2>&1
+
+# Try to create node from /proc/misc
+MINOR=$(grep keystone_enclave /proc/misc 2>/dev/null | awk '{print $1}')
+echo "minor=$MINOR"
+if [ -n "$MINOR" ]; then
+  mknod /dev/keystone_enclave c 10 $MINOR 2>&1
+  echo "mknod exit=$?"
+fi
+ls -la /dev/keystone_enclave 2>&1
+
+/keystone/hello-runner /keystone/enclave.pkg

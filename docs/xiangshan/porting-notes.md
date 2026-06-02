@@ -3,6 +3,53 @@
 Detailed record of all source code changes made to adapt Keystone for the
 Xiangshan (Kunminghu) RISC-V processor.
 
+## FEP packaging bug fix
+
+### File: `scripts/pkg-flat.py` — segment data alignment
+
+**Bug:** The `build_package` function set `va_base = align_down(vaddr)` but wrote the ELF segment data directly to the file without inserting zero padding for the gap between the page-aligned `va_base` and the actual ELF segment `vaddr`. This caused the entire data segment (including GOT, data, bss) to be shifted earlier in the virtual address space by `(vaddr - va_base)` bytes.
+
+**Effect:** Code that accessed global data via the GOT (such as `__libc_setup_tls`) read from the wrong virtual address, getting zeros instead of the expected pointer, leading to a NULL pointer dereference at `runtime/util/rt_util.c:62`.
+
+Before:
+```python
+padded = raw_data[:filesz]
+pad_len = data_pages * PAGE_SIZE - len(padded)
+if pad_len > 0:
+    padded = padded + b'\x00' * pad_len
+```
+
+After:
+```python
+gap = vaddr - va_base
+padded = b'\x00' * gap + raw_data[:filesz]
+pad_len = data_pages * PAGE_SIZE - len(padded)
+if pad_len > 0:
+    padded = padded + b'\x00' * pad_len
+```
+
+Root cause: the FEP writer padded only to the end of the page, but not the beginning. Since most RISC-V ELF segments have page-aligned VAs this went unnoticed; it manifests when a data segment VA (e.g., `0x782f8`) is not page-aligned.
+
+## Enclave libc startup fix — bypass glibc TLS init
+
+### Files: `sdk/examples/hello/eapp/hello.c`, `sdk/examples/hello/CMakeLists.txt`
+
+**Problem:** Even with the FEP alignment fix, the hello enclave crashed at `__libc_setup_tls` (user code VA `0x10688`). The statically-linked glibc's TLS initialization (`_dl_ns`, `_dl_tls_*`) expects runtime dynamic linker data structures that are not initialized in the bare-metal enclave environment.
+
+**Fix:** Replace the standard C library startup (`_start → __libc_start_main → main → printf`) with a minimal startup that directly invokes SBI ecalls:
+
+- `hello.c`: Define `_start` directly, use inline SBI ecalls (`a7=1` for putchar, `a7=17` for exit) instead of libc `printf`.
+- `CMakeLists.txt`: Add `-nostartfiles -Wl,-e,_start` to `target_link_libraries` to exclude CRT startup code.
+
+```c
+void _start(void) {
+  my_puts("hello, world!\n");
+  sbi_exit(0);
+}
+```
+
+The runtime (`runtime/call/syscall.c`) was also patched to forward legacy SBI putchar ecalls (`a7=1`) from U-mode to M-mode via `sbi_putchar(arg0)`.
+
 ## Platform integration
 
 ### 1. Linux kernel defconfig — `conf/linux64-xiangshan-defconfig`
@@ -66,6 +113,82 @@ to mark reserved memory regions as no-map for the kernel.
 carray-platform_override_modules-y += xiangshan_kmh
 platform-objs-y += xiangshan_kmh.o
 ```
+
+### 5. Console fallback for NEMU UARTLITE — `sm/plat/nemu_xiangshan/platform.c`
+
+`fdt_serial_init()` returns `SBI_ENODEV` on NEMU-2026.03.r3 even though the
+FDT correctly describes `xlnx,xps-uartlite-1.00.a` at MMIO 0x40600000. The
+root cause is that OpenSBI's `fdt_get_address()` returns the relocated FDT
+at 0x82200000, but the actual FDT data at that location appears invalid to
+the serial driver probing code.
+
+**Fix:** In `generic_early_init()`, if `fdt_serial_init()` fails, register a
+fallback console device directly using the known UARTLITE MMIO address:
+
+```c
+static void early_putc(char c)
+{
+	volatile char *uart = (volatile char *)0x40600004;
+	*uart = c;
+}
+
+/* In generic_early_init(): */
+rc = fdt_serial_init(fdt);
+if (rc) {
+	static struct sbi_console_device xs_console = {
+		.name = "xs-uartlite"
+	};
+	xs_console.console_putc = (void (*)(char))early_putc;
+	sbi_console_set_device(&xs_console);
+	rc = 0;
+}
+```
+
+**Note:** The only added header is `<sbi/sbi_console.h>` for
+`sbi_console_set_device()`. The UARTLITE TX FIFO is at MMIO offset 0x4 from
+the base 0x40600000 (per Xilinx UARTLITE spec). NEMU outputs UARTLITE data
+to stderr.
+
+## Enclave runtime: `eyrie_boot` stub / stale initramfs
+
+### Root cause (two issues)
+
+**Issue 1:** The runtime's `eyrie_boot` function in the build tree
+(`build64-xs/examples/hello/runtime/src/eyrie-hello-eyrie/sys/boot.c`)
+had been replaced with a stub that just returned immediately:
+```c
+/* Minimal test: just return, no sbi_putchar, no init */
+return;
+```
+This was left over from an earlier debugging session. The source file at
+`runtime/sys/boot.c` still had the full initialization code, but the build
+tree copy was stale. The runtime binary (`eyrie-rt`) was compiled with the
+stub, so the enclave entered and immediately returned without making any
+SBI ecalls or producing output.
+
+**Fix:** Rebuild the enclave runtime from scratch by deleting the
+ExternalProject stamp and source:
+```bash
+rm -rf build64-xs/examples/hello/runtime/src/eyrie-hello-eyrie*
+```
+Or manually recopy boot.c and force the enclave package rebuild.
+
+**Issue 2:** When manually rebuilding the kernel Image, `CONFIG_INITRAMFS_ROOT_UID`
+must be set to the build user's UID (not 0) for the uid→root mapping to work
+correctly. The cmake build uses `id -u` and `id -g` for this:
+```cmake
+execute_process(COMMAND id -u OUTPUT_VARIABLE uid)
+CONFIG_INITRAMFS_ROOT_UID=${uid}
+```
+
+### Verification
+After the fix, the SM prints the correct runtime entry instructions:
+```
+[SM] runtime PA=0x81005000: insns 0x00008117 0xd6813103 0x14001073 0x49c000ef
+```
+Note: `0xd6813103` (ld sp, -664) and `0x49c000ef` (jal eyrie_boot) differ
+from the old stub binary. The runtime's `sbi_putchar('R')` output appears
+on the console, confirming end-to-end ecall-and-console functionality.
 
 ## GCC 15 / RISC-V toolchain fixes
 
@@ -226,6 +349,84 @@ Pre-built DTB at `nemu_board/dts/build/xiangshan.dtb` (1 hart, 128MB DRAM).
 | 17 | `sm/plat/generic/Kconfig` | new | v3 platform Kconfig |
 | 18 | `sm/plat/generic/configs/defconfig` | new | v3 platform feature defconfig |
 | 19 | `sm/plat/generic/config.mk` | mod | cppflags for v3 |
+| 20 | `sm/plat/nemu_xiangshan/platform.c` | mod | Console fallback when `fdt_serial_init()` fails on NEMU |
+| 21 | `sm/src/trap.S` | mod | Add `.align 2` before `trap_vector_enclave` |
+| 22 | `sm/src/enclave.c` | mod | Preserve `MSTATUS_FS | MSTATUS_VS` in `regs->mstatus` |
+
+## 调试与修复记录
+
+### 20. Console fallback — `sm/plat/nemu_xiangshan/platform.c`
+
+**问题：** `fdt_serial_init()` 在 NEMU-2026.03.r3 上返回 `SBI_ENODEV`，导致 OpenSBI 无控制台输出。
+
+**原因：** OpenSBI 的 FDT 重定位后，`fdt_get_address()` 返回的地址处 FDT 数据对串口驱动探测无效。
+
+**修复：** 在 `generic_early_init()` 中注册回退控制台设备：
+
+```c
+static void early_putc(char c) {
+    volatile char *uart = (volatile char *)0x40600004;
+    *uart = c;
+}
+
+/* 在 generic_early_init() 中： */
+rc = fdt_serial_init(fdt);
+if (rc) {
+    static struct sbi_console_device xs_console = { .name = "xs-uartlite" };
+    xs_console.console_putc = (void (*)(char))early_putc;
+    sbi_console_set_device(&xs_console);
+    rc = 0;
+}
+```
+
+### 21. `trap_vector_enclave` 未对齐 — `sm/src/trap.S`
+
+**问题：** SM 进入 enclave 后，runtime 的 `sbi_putchar('R')` ecall 引发的异常无法到达 SM 的 trap handler。
+
+**根因：** `trap_vector_enclave` 标签的 VMA 为 `0x1e5a6`（低 2 位 = 0b10），不满足 RISC-V `mtvec` 的 4 字节对齐要求。`csr_write(mtvec, &trap_vector_enclave)` 时低 2 位被 NEMU 清除变为 `0x1e5a4`，指向错误地址。
+
+**症状：** NEMU 日志显示无休止的 `cause=1 prev_pc=0x8001e5a4`（Instruction Access Fault）。
+
+**修复：** 在标签前加 `.align 2`：
+
+```asm
+  .globl trap_vector_enclave
+  .align 2
+trap_vector_enclave:
+    csrrw    tp, CSR_MSCRATCH, tp
+```
+
+### 22. `mstatus` 清除了 `VS/FS` 字段 — `sm/src/enclave.c`
+
+**问题：** runtime 的 `sbi_putchar('R')` 执行后，后续初始化遇到向量指令（`vsetivli` 等）时触发 Illegal Instruction 异常。
+
+**根因：** `context_switch_to_enclave()` 设置 `regs->mstatus = (1 << MSTATUS_MPP_SHIFT)`（即 `0x800`）时，**仅设置了 MPP 字段**，`VS`（位 [10:9]，控制 V 扩展）和 `FS`（位 [14:13]，控制浮点）被清零为 `0b00 = Off`。runtime 和 hello 二进制均启用 V 扩展，执行第一条向量指令即崩溃。
+
+**修复：** 设置 mstatus 时保留 FS 和 VS：
+
+```c
+regs->mstatus = (1 << MSTATUS_MPP_SHIFT) | MSTATUS_FS | MSTATUS_VS;
+// = 0x800 | 0x6000 | 0x600 = 0x6E00
+//   MPP=1(S-mode)  FS=0b11(Dirty)  VS=0b11(Dirty)
+```
+
+### 23. Initramfs UID 映射 — 手动构建 kernel 注意事项
+
+**问题：** 手动运行 `make -C linux.build` 时指定 `CONFIG_INITRAMFS_ROOT_UID=0` 而非构建用户的实际 UID，导致 initramfs 文件保留 uid=1000，`init` 进程以非 root 运行，`insmod` 静默失败。
+
+**修复：** 必须使用 `CONFIG_INITRAMFS_ROOT_UID=$(id -u) CONFIG_INITRAMFS_ROOT_GID=$(id -g)`：
+
+```bash
+make -C linux.build \
+  CONFIG_INITRAMFS_ROOT_UID=1000 CONFIG_INITRAMFS_ROOT_GID=1000 \
+  ...
+```
+
+### 当前未解决问题
+
+| 问题 | 地址 | 表现 |
+|------|------|------|
+| 用户代码 NULL 指针访问 | `0x10688` | `ld s0, 0(a5)` 中 `a5=0`，scause=0xd（Load page fault） |
 
 ## OpenSBI v1 → v3 replacement
 
@@ -345,156 +546,6 @@ cmake .. -DXIANGSHAN=ON
 make -j$(nproc)
 ```
 
-### 16. Fix: Remove redundant SBI ecall registration in `sm.c`
-
-**File**: `sm/src/sm.c` line 134
-
-**Before**:
-```c
-sbi_ecall_register_extension(&ecall_keystone_enclave);
-```
-
-**After**: Removed
-
-**Reason**: OpenSBI v3 framework automatically registers all extensions in
-`sbi_ecall_exts[]` via `sbi_ecall_init()` (called from `init_coldboot()`).
-The `ecall_keystone_enclave` extension's `register_extensions` callback
-(`sm/src/sm-sbi-opensbi.c:87`) already calls `sbi_ecall_register_extension()`.
-The direct call in `sm_init()` was a leftover from the OpenSBI v1.x era that
-caused a double registration, returning `SBI_EINVAL (-3)`:
-
-```
-sbi_ecall_init: [0] name=keyston failed ret=-3
-init_coldboot: ecall init failed (error -3)
-```
-
-### 17. Revert: rename `.name` from `"keyston"` back to `"keystone"`
-
-**File**: `sm/src/sm-sbi-opensbi.c` line 92
-
-**Before**:
-```c
-.name = "keyston",
-```
-
-**After**:
-```c
-.name = "keystone",
-```
-
-**Reason**: OpenSBI `struct sbi_ecall_extension` has `char name[8]`.
-`"keystone"` is exactly 8 characters, which fits (without `\0`).
-Debug printing uses `%.8s` format specifier, so no overflow.
-The truncation to `"keyston"` (7 chars + `\0`) was unnecessary.
-
-### 18. Xiangshan buildroot config + console setup
-
-**New file**: `conf/riscv64_xiangshan_defconfig`
-**Modified**: `CMakeLists.txt` lines 103-111, lines 224-227
-
-Before this change, xiangshan reused the QEMU buildroot config
-(`qemu_riscv64_virt_defconfig`), which had no getty configured.
-The system booted to a login prompt requiring `root` / `sifive`.
-
-**Changes**:
-
-1. Copied `conf/qemu_riscv64_virt_defconfig` → `conf/riscv64_xiangshan_defconfig`
-2. Getty DISABLED — shell spawned directly on `/dev/console` via `::respawn:-/bin/sh`
-   in inittab. This avoids hvc0 getty input issues while the DTS specifies
-   `console=hvc0` but `/dev/console` handles input correctly.
-3. Keystone driver auto-load + hello enclave auto-run added to inittab
-   (see section 20).
-4. Set `buildroot_config` in CMakeLists.txt xiangshan branch:
-   ```cmake
-   set(buildroot_config ${confdir}/riscv64_xiangshan_defconfig)
-   ```
-
-### 20. Fix: /dev/console interactive shell + auto-run keystone hello
-
-**File**: `CMakeLists.txt` lines 224-227 (initramfs build section)
-
-getty on hvc0 did not accept keyboard input. Fixed by:
-- Disabling buildroot getty (removes `hvc0::respawn:/sbin/getty ...` from inittab)
-- Adding `::respawn:-/bin/sh` to use `/dev/console` directly
-- Adding `::sysinit:` entries to auto-load keystone driver and run hello
-
-**After** (inittab generation):
-```make
-COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> .../inittab
-COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> .../inittab
-COMMAND echo "::sysinit:/root/keystone/hello-runner /root/keystone/hello" >> .../inittab
-COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> .../inittab
-```
-
-**Execution order at boot**:
-1. `::sysinit:` mount devtmpfs
-2. `::sysinit:` insert keystone-driver.ko
-3. `::sysinit:` run hello-runner (enclave test)
-4. `::respawn:` interactive shell on /dev/console (via getty, with terminal echo)
-
-**Rationale**: `::respawn:-/bin/sh` gave a working shell but without terminal echo
-(typed characters invisible). getty on `/dev/console` properly initializes the
-terminal, including echo. Using `/dev/console` (not hvc0/ttyS0) is correct
-because the kernel console subsystem routes I/O through the actual console
-driver (hvc0 in this case via `console=hvc0` DTS chosen node).
-
-### 21. Fix: toolchain mismatch via full static linking
-
-**File**: `sdk/examples/CMakeLists.txt` line 33
-
-**Error** (progressive — three stages):
-```
-# Stage 1: GLIBCXX mismatch
-hello-runner: /usr/lib/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
-
-# Stage 2: glibc mismatch (after static libstdc++)
-hello-runner: /lib64/libc.so.6: version `GLIBC_2.38' not found
-hello-runner: /lib64/libc.so.6: version `GLIBC_2.35' not found
-
-# Stage 3: glibc replacement broke dropbear
-dropbear: /lib/libcrypt.so.1: undefined symbol: __snprintf, version GLIBC_PRIVATE
-```
-
-**Root cause**: buildroot (Bootlin GCC 10, glibc 2.34) and SDK (/opt/riscv
-GCC 15, glibc 2.42) use different toolchains. hello-runner links against
-GLIBCXX_3.4.32 (libstdc++) and GLIBC_2.35/2.36/2.38 symbols
-(`_dl_find_object`, `arc4random`, `__isoc23_strtoul`) from GCC 15 runtime.
-Replacing glibc wholesale broke buildroot binaries (dropbear).
-
-**Fix**: Full static linking — zero dynamic library dependencies:
-```cmake
-# sdk/examples/CMakeLists.txt
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
-```
-
-**Verification**: `readelf -d hello-runner` → "There is no dynamic section in
-this file." Binary is 2.4MB, fully self-contained. Rootfs remains untouched
-(glibc 2.34, dropbear works).
-
-### 19. Fix: fw_jump.bin symlink for test package dependencies
-
-**File**: `CMakeLists.txt` lines 271-278 (sm target)
-
-**Before**:
-```cmake
-add_custom_target("sm" ALL DEPENDS "linux" ${sm_wrkdir_exists}
-  ...
-  COMMENT "Building sm"
-)
-```
-
-**After** (added two COMMAND lines):
-```cmake
-  COMMAND ln -sf fw_payload.bin platform/generic/firmware/fw_jump.bin
-  COMMAND ln -sf fw_payload.elf platform/generic/firmware/fw_jump.elf
-```
-
-**Reason**: The SM build always produces `fw_payload.bin` (via `FW_PAYLOAD=y`),
-but `${fw_bin}` and `${fw_elf}` variables point to `fw_jump.bin` / `fw_jump.elf`.
-Test packages (attestation, etc.) use `${fw_bin}` as a file dependency for
-packaging, which caused `No rule to make target 'fw_jump.bin'` errors.
-Symlinks fix this post-build.
-
 ### Run on NEMU
 
 ```bash
@@ -504,348 +555,42 @@ Symlinks fix this post-build.
 
 ### Run hello enclave (after boot)
 
+**Flat binary mode (merge_runtime branch):**
+
+```bash
+insmod /root/keystone/keystone-driver.ko
+/root/keystone/hello-runner /root/keystone/enclave.pkg
+```
+
+**Legacy ELF mode (previous branches):**
+
 ```bash
 insmod /root/keystone/keystone-driver.ko
 /root/keystone/hello-runner /root/keystone/hello /root/keystone/eyrie-rt
 ```
 
-## Initramfs visibility & SM trap handler fixes
+## Flat Binary Packaging (merge_runtime)
 
-### 7. Initramfs inittab — add echo visibility — `CMakeLists.txt:223-231`
+Combines eyrie-rt + hello ELFs into a single `.pkg` file at build time,
+eliminating libelf parsing and mmap-based page copying in the SDK.
 
-**Before:**
-```cmake
-COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> .../inittab || true
-COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> .../inittab || true
-COMMAND echo "::sysinit:/root/keystone/hello-runner ..." >> .../inittab || true
-COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> .../inittab || true
-```
+**Files changed:**
 
-**After:** Added `::once:/bin/echo === ... ===` lines before each sysinit step:
-```cmake
-COMMAND echo "::once:/bin/echo === Keystone init: mounting devtmpfs ===" >> .../inittab || true
-COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> .../inittab || true
-COMMAND echo "::once:/bin/echo === Keystone init: loading keystone driver ===" >> .../inittab || true
-COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> .../inittab || true
-COMMAND echo "::once:/bin/echo === Keystone init: running hello enclave ===" >> .../inittab || true
-COMMAND echo "::sysinit:/root/keystone/hello-runner ..." >> .../inittab || true
-COMMAND echo "::once:/bin/echo === Keystone init: spawning shell ===" >> .../inittab || true
-COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> .../inittab || true
-```
-
-**Reason**: Previously the console showed no indication of which init step was running.
-If the `hello-runner` (a `::sysinit` command) hangs, BusyBox init never reaches the
-`getty` shell line. Echo markers let us see exactly where init stops.
-
----
-
-### 8. Enable enclave trap handler — `sm/plat/generic/objects.mk:21-23`
-
-**Before:**
-```makefile
-#platform-objs-y += ../../src/sbi_trap_hack.o  # TODO: port to v3
-platform-objs-y += ../../src/trap.o
-#platform-objs-y += ../../src/ipi.o  # TODO: port to v3 (sbi_tlb_info API changed)
-```
-
-**After:**
-```makefile
-platform-objs-y += ../../src/sbi_trap_hack.o
-platform-objs-y += ../../src/trap.o
-platform-objs-y += ../../src/ipi.o
-```
-
-**Reason**: The SM's enclave trap handler (`sbi_trap_handler_keystone_enclave`) was
-previously an empty stub in `stubs.c` that just returned without processing any trap.
-This meant timer interrupts during enclave execution were silently ignored, causing
-the `KEYSTONE_IOC_RUN_ENCLAVE` ioctl to block indefinitely in the kernel.
-Re-enabling the real trap handler allows the SM to properly stop the enclave
-on timer interrupts (setting `SBI_ERR_SM_ENCLAVE_INTERRUPTED`) and resume it.
-
-Also enabled `ipi.c` for cross-hart PMP synchronization.
-
----
-
-### 9. Fix sbi_trap_hack.c for OpenSBI v3 API — `sm/src/sbi_trap_hack.c`
-
-**Changes:**
-- Replaced `#include <sbi/sbi_misaligned_ldst.h>` with `#include <sbi/sbi_trap_ldst.h>`
-  (file was renamed in OpenSBI v3)
-- Added `#include <sbi/sbi_string.h>` for `sbi_memcpy`
-- Created a local `struct sbi_trap_context tcntx` on the stack to wrap `regs`
-  into the v3 `sbi_trap_context` format (which includes trap info alongside regs)
-- Updated calls to OpenSBI handlers that changed signature to take
-  `struct sbi_trap_context *` instead of `struct sbi_trap_regs *`:
-
-| Old API (v1.x) | New API (v3) |
+| File | Change |
 |---|---|
-| `sbi_illegal_insn_handler(mtval, regs)` | `sbi_illegal_insn_handler(&tcntx)` |
-| `sbi_misaligned_load_handler(mtval, mtval2, mtinst, regs)` | `sbi_misaligned_load_handler(&tcntx)` |
-| `sbi_misaligned_store_handler(mtval, mtval2, mtinst, regs)` | `sbi_misaligned_store_handler(&tcntx)` |
-| `sbi_ecall_handler(regs)` | `sbi_ecall_handler(&tcntx)` |
-| `trap.epc = regs->mepc` (before `sbi_trap_redirect`) | Removed — `sbi_trap_redirect` now reads `mepc` from `regs` directly |
-
-- After each handler call, `sbi_memcpy(regs, &tcntx.regs, ...)` copies back any
-  register modifications (e.g., ecall return values in a0/a1)
-
-**Reason**: OpenSBI v3 changed the signature of all trap-handling functions from
-taking raw `struct sbi_trap_regs *` to taking `struct sbi_trap_context *` which
-embeds regs plus trap cause/value info. Without these fixes, the re-enabled
-`sbi_trap_hack.c` would fail to compile.
-
----
-
-### 10. Fix ipi.c for OpenSBI v3 API — `sm/src/ipi.c` (DISABLED — see note)
-
-**Note: ipi.c remains disabled in `objects.mk`** because OpenSBI v3 removed
-the `local_fn` callback field from `struct sbi_tlb_info`. The old PMP IPI
-mechanism abused `sbi_tlb_request()` with a custom callback, which is no
-longer supported. For single-hart Xiangshan setups, the empty stub in
-`stubs.c` is sufficient. Porting to `sbi_ipi_event_create()` is TODO.
-
-The code was partially updated for v3 but not enabled:
-
-**Before:**
-```c
-ulong mask = 0;
-sbi_hsm_hart_interruptible_mask(sbi_domain_thishart_ptr(), &mask);
-...
-sbi_tlb_request(mask, 0, &tlb_info);
-```
-
-**After:**
-```c
-struct sbi_hartmask mask;
-SBI_HARTMASK_INIT(&mask);
-sbi_hsm_hart_interruptible_mask(sbi_domain_thishart_ptr(), &mask);
-...
-sbi_tlb_request(sbi_hartmask_bits(&mask)[0], 0, &tlb_info);
-```
-
-Also added `#include <sbi/sbi_hartmask.h>`.
-
-**Reason**: `sbi_hsm_hart_interruptible_mask()` changed its second parameter from
-`ulong *` to `struct sbi_hartmask *` (a multi-word bitmap). The hartmask must be
-converted back to a `ulong` via `sbi_hartmask_bits(&mask)[0]` for `sbi_tlb_request()`
-which still expects a single-word bitmask.
-
----
-
-### 11. Update stubs.c — remove replaced stubs — `sm/src/stubs.c:7-9`
-
-**Before:**
-```c
-void send_and_sync_pmp_ipi(void) { }
-void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs) { }
-```
-
-**After:**
-```c
-void send_and_sync_pmp_ipi(int region_idx, int type, uint8_t perm) { }
-```
-
-**Reason**: The real `sbi_trap_handler_keystone_enclave` in `sbi_trap_hack.c` is
-now linked, so its empty stub causes a duplicate symbol error. Removed. Also
-fixed `send_and_sync_pmp_ipi` stub signature to match the declaration in `ipi.h`
-(`void send_and_sync_pmp_ipi(int, int, uint8_t)` instead of `void`).
-
----
-
-### 12. Add debug output to hello-runner — `sdk/examples/hello/host/host.cpp`
-
-**Before:** No output at all — silently does `enclave.init()` → `enclave.run()`.
-
-**After:** Added `fprintf(stderr, ...)` at each step:
-```cpp
-fprintf(stderr, "[hello-runner] Starting...\n");
-fprintf(stderr, "[hello-runner] Initializing enclave (eapp=%s, rt=%s)...\n", argv[1], argv[2]);
-fprintf(stderr, "[hello-runner] Registering ocall dispatch...\n");
-fprintf(stderr, "[hello-runner] Running enclave...\n");
-fprintf(stderr, "[hello-runner] Enclave completed successfully!\n");
-```
-
-Added `#include <cstdio>`.
-
-**Reason**: The hello-runner had zero user-visible output. If it hung during init
-or run, there was no way to tell which step failed. stderr output goes to the console
-(via the getty shell's tty).
-
----
-
-### 13. Fix NULL `out` dereference in trap handler — `sm/src/sbi_trap_hack.c`
-
-**Before:**
-```c
-sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, NULL);
-sbi_sm_exit_enclave(regs, rc, NULL);
-```
-
-**After:**
-```c
-struct sbi_ecall_return out;
-sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
-sbi_sm_exit_enclave(regs, rc, &out);
-```
-
-Also updated `sbi_trap_error()` signature to accept `struct sbi_ecall_return *`.
-
-**Reason**: `sbi_sm_exit_enclave()` and `sbi_sm_stop_enclave()` in `sm-sbi.c:64,73`
-directly dereference `out->skip_regs_update = true` without NULL check. Passing
-NULL causes M-mode crash → kernel ioctl hangs forever.
-
----
-
-### 14. Add `-march=rv64gc -mabi=lp64d` to enclave/SDK compilation
-
-**Files modified:**
-- `sdk/macros.cmake:34` — `CFLAGS` now includes `-march=rv64gc -mabi=lp64d`
-- `runtime/CMakeLists.txt:57` — added `-march=rv64gc -mabi=lp64d`
-- `sdk/examples/CMakeLists.txt:35` — added `add_compile_options(-march=rv64gc -mabi=lp64d)`
-
-**Before:** No `-march`/`-mabi` flags set anywhere in the SDK or runtime build
-chain. All components inherited the toolchain default ISA which includes V-extension
-and B-extension instructions.
-
-**After:** All enclave components (eapp, eyrie-rt, libkeystone-eapp.a) compiled
-with `-march=rv64gc`. The actual `.o` files are clean of V/B instructions.
-
-**Caveat:** The statically-linked eapp binary still shows V/B in its ELF ISA
-attribute due to the toolchain's glibc (libc.a) which was pre-compiled with
-V/B support. The eapp's `__libc_setup_tls` startup path contains V instructions
-from glibc. For full V-free enclave, a custom C library compiled without V is needed.
-
----
-
-### 15. Fix inittab colon separator — `CMakeLists.txt:226-233`
-
-**Before:**
-```
-::once:/bin/echo === Keystone init: mounting devtmpfs ===
-```
-
-**After:**
-```
-::once:/bin/echo === Keystone init -- mounting devtmpfs ===
-```
-
-**Reason**: BusyBox inittab uses `:` as the field delimiter
-(`id:runlevel:action:process`). The 4th `:` in the echo message caused the
-process field to be truncated (e.g., `mounting devtmpfs ===` was treated as
-part of the process command, not the echo argument). This produced `sh: /:
-Permission denied` errors and the echo lines appeared out of order.
-
----
-
-### 16. Fix `XIANGSHAN` cache corruption — cmake rebuild with DTB
-
-**Symptom:** SM built without `FW_FDT_PATH`, kernel had no device tree → no boot.
-
-**Root cause:** During cmake cache manipulation (fixing corrupted `CMAKE_C_FLAGS`),
-the `XIANGSHAN:BOOL=FALSE` entry was restored from a stale cache. Without
-`XIANGSHAN=y`, the SM was built without the Xiangshan DTB, and the
-`CONFIG_EFIVAR_FS=m` kernel module symvers issue resurfaced.
-
-**Fix:** Reconfigured with `-DXIANGSHAN=y`, disabled `EFIVAR_FS` in kernel config,
-rebuilt kernel, driver, buildroot, and SM. Verified `FW_FDT_PATH` points to
-`xiangshan-opensbi-linuxkernel/nemu_board/dts/build/xiangshan.dtb`.
-
----
-
-### 20. Fix: Enclave trap handling + `__builtin_unreachable()` removal (branch: `double_trap`)
-
-**Critical design insight**: In Keystone, traps inside the enclave are handled
-by the **eyrie-rt runtime (S-mode)** via `encl_trap_handler`, NOT by the SM's
-`trap_vector_enclave`. The SM's `sbi_trap_handler_keystone_enclave` only handles
-**M-mode interrupts** (timer, IPI) to pause/resume the enclave. All S/U-mode
-exceptions (ecalls, page faults) are delegated to S-mode via `medeleg`
-and processed by eyrie-rt.
-
-This design is preserved by not clearing `medeleg` in `context_switch_to_enclave`.
-The original Keystone code (commit `ecb663854`) only clears `mideleg` (to capture
-timer interrupts in M-mode). Adding `csr_write(medeleg, 0)` in the xiangshan port
-(commit `db00a0450`) would force ALL exceptions to M-mode, bypassing eyrie-rt.
-
-**Three fixes applied:**
-
-#### 20a. Remove `csr_write(medeleg, 0)` — `sm/src/enclave.c`
-
-```diff
- uintptr_t interrupts = 0;
- csr_write(mideleg, interrupts);
--csr_write(medeleg, interrupts);
-```
-
-**Diagnostic confirmed**: `medeleg=0xf4b509` preserved (bit 9 = 0 → S-mode ecall
-to M-mode, bit 8 = 1 → U-mode ecall to S-mode).
-
-#### 20b. Remove `__builtin_unreachable()` — `sm/src/sm-sbi-opensbi.c`
-
-Removed from all 4 cases: `SBI_SM_RUN_ENCLAVE`, `SBI_SM_RESUME_ENCLAVE`,
-`SBI_SM_STOP_ENCLAVE`, `SBI_SM_EXIT_ENCLAVE`.
-
-**Reason**: In OpenSBI v1.x these functions performed `mret` directly and never
-returned. In v3 they return so `sbi_ecall_handler` can apply `skip_regs_update`.
-`__builtin_unreachable()` caused the compiler to eliminate the function epilogue,
-preventing `sbi_ecall_handler` from properly skipping the `mepc += 4` update.
-
-**Diagnostic confirmed**: `sbi_ecall_handler` shows `skip=1, mepc=0xffffffffc0000000`
-(correct enclave entry).
-
-#### 20c. Add `CAUSE_USER_ECALL` handling — `sm/src/sbi_trap_hack.c`
-
-```diff
-+case CAUSE_USER_ECALL:
- case CAUSE_SUPERVISOR_ECALL:
- case CAUSE_MACHINE_ECALL:
-```
-
-**Reason**: Enclave app runs in U-mode, ecall from U-mode causes mcause=8
-which was unhandled. Now forwarded to `sbi_ecall_handler`.
-
-### 21. Add `stvec=0` safety check — `sm/src/sbi_trap_hack.c`
-
-```diff
- default:
-+    if (!csr_read(CSR_STVEC)) {
-+        msg = "enclave trap with no S-mode handler (stvec=0)";
-+        goto trap_error;
-+    }
-```
-
-**Reason**: `clean_state()` initializes `stvec=0`. If a fault occurs before
-eyrie-rt sets up its `stvec`, `sbi_trap_redirect` would jump to VA 0 → infinite
-fault cascade. This fix exits the enclave cleanly instead.
-
-### 22. Diagnosed but NOT applied: `sfence.vma` after satp write
-
-Added then reverted. PMP_SET macros already contain `sfence.vma` which covers
-TLB coherency. No evidence this was a problem.
-
-### 23. Diagnosed but NOT applied: `mscratch` in `switch_vector_enclave()`
-
-**Hypothesis**: `_trap_handler` saves but never restores `mscratch` after each
-trap. `trap_vector_enclave` expects `mscratch` to point to SBI scratch area.
-If corrupted, `csrrw tp, mscratch, tp` loads wrong address → `sd t0, 96(tp)`
-writes to random physical address → bus error → NEMU double trap.
-
-**Test**: Added `csr_write(CSR_MSCRATCH, sbi_scratch_thishart_ptr())` to
-`switch_vector_enclave()`. Result: no change, 'T' still absent.
-
-### Open issue: double trap at PC 0xffffffffc000546c
-
-After applying fixes 20a-20c and 21, the enclave executes ~780M instructions
-but no M-mode trap ever reaches `trap_vector_enclave` (confirmed by assembly-level
-UART writes of 'T' and 'M' that never appear). The system eventually halts with
-NEMU reporting "CRITICAL ERROR: trap when mnstatus.nmie close" at runtime PC
-`0xffffffffc000546c` (inside `rt_util_getrandom`).
-
-Key observations:
-- `medeleg=0xf4b509` (bit 9=0) means S-mode ecalls SHOULD go to M-mode
-- `mideleg` is properly cleared (timer → M-mode)
-- `mtvec` points to `trap_vector_enclave` (verified in `[SM] entering enclave` print)
-- Eyrie-rt disassembly confirms `sbi_random` executes `ecall` instruction
-- Yet `trap_vector_enclave` assembly's very first instruction (UART write) never executes
-
-This suggests the S-mode `ecall` instruction is either being delegated to S-mode
-despite `medeleg=0`, or the M-mode trap entry sequence itself fails on the
-Xiangshan NEMU simulator.
+| `scripts/pkg-flat.py` | NEW: build-time ELF→flat package converter |
+| `sdk/include/host/FepPackage.hpp` | NEW: flat package format header |
+| `sdk/src/host/Enclave.cpp` | ADD `loadFlatEnclave()`, `init()` detects `.pkg` |
+| `sdk/include/host/Enclave.hpp` | ADD `loadFlatEnclave`, flat entry fields |
+| `sdk/examples/hello/CMakeLists.txt` | ADD `.pkg` build target |
+| `sdk/examples/hello/host/host.cpp` | Support single-arg `.pkg` input |
+| `CMakeLists.txt` | Copy `enclave.pkg` into initramfs rootfs |
+
+**FEP format (all little-endian, 64-bit):**
+- 24-byte header: magic=0x504B4745, num_segs, rt_entry, user_entry
+- 32-byte SegEntry[num_segs]: va_base, va_pages, data_offset, data_pages, flags
+- Raw page-aligned segment data follows
+
+**Rationale:** Eliminates libelf dependency and fragile mmap+memcpy page
+loading in the SDK. The runtime and enclave app are packaged at build time
+into a single flat binary with a simple header.

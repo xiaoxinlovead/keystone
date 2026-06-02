@@ -5,32 +5,33 @@
 #include "edge/edge_call.h"
 #include "host/keystone.h"
 
-#include <cstdio>
+#include <cstring>
 
 using namespace Keystone;
 
 int
 main(int argc, char** argv) {
-  fprintf(stderr, "[hello-runner] Starting...\n");
-
   Enclave enclave;
   Params params;
 
   params.setFreeMemSize(1024 * 1024);
   params.setUntrustedMem(DEFAULT_UNTRUSTED_PTR, 1024 * 1024);
 
-  fprintf(stderr, "[hello-runner] Initializing enclave (eapp=%s, rt=%s)...\n",
-          argv[1], argv[2]);
-  enclave.init(argv[1], argv[2], params);
+  /* Support both traditional (2 ELF args) and flat (.pkg) modes */
+  if (argc >= 3 && argv[1] && argv[2]) {
+    enclave.init(argv[1], argv[2], params);
+  } else if (argc >= 2 && argv[1]) {
+    enclave.init(argv[1], argv[1], params);  /* second arg unused for .pkg */
+  } else {
+    fprintf(stderr, "Usage: %s <enclave.pkg> | <eapp> <eyrie-rt>\n", argv[0]);
+    return 1;
+  }
 
-  fprintf(stderr, "[hello-runner] Registering ocall dispatch...\n");
   enclave.registerOcallDispatch(incoming_call_dispatch);
   edge_call_init_internals(
       (uintptr_t)enclave.getSharedBuffer(), enclave.getSharedBufferSize());
 
-  fprintf(stderr, "[hello-runner] Running enclave...\n");
   enclave.run();
 
-  fprintf(stderr, "[hello-runner] Enclave completed successfully!\n");
   return 0;
 }

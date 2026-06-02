@@ -102,6 +102,8 @@ elseif(cva6)
 	set(initramfs true)
 elseif(xiangshan)
   message(STATUS "Xiangshan configs. Forcing initramfs=y")
+  set(SM_PLATFORM "nemu_xiangshan" CACHE STRING "Board name for SM hardware-specific functions" FORCE)
+  set(platform ${SM_PLATFORM})
   set(linux_defconfig ${confdir}/linux64-xiangshan-defconfig)
   message(STATUS "Using Linux defconfig: ${linux_defconfig}")
   set(buildroot_config ${confdir}/riscv64_xiangshan_defconfig)
@@ -225,12 +227,13 @@ if(initramfs)
     COMMAND tar -xpf ${buildroot_wrkdir}/images/rootfs.tar -C ${initramfs_sysroot} --exclude ./dev --exclude ./usr/share/locale
     COMMAND echo "::once:/bin/echo === Keystone init -- mounting devtmpfs ===" >> ${initramfs_sysroot}/etc/inittab || true
     COMMAND echo "::sysinit:/bin/mount -t devtmpfs devtmpfs /dev" >> ${initramfs_sysroot}/etc/inittab || true
-    COMMAND echo "::once:/bin/echo === Keystone init -- loading keystone driver ===" >> ${initramfs_sysroot}/etc/inittab || true
-    COMMAND echo "::sysinit:/sbin/insmod /root/keystone/keystone-driver.ko" >> ${initramfs_sysroot}/etc/inittab || true
-    COMMAND echo "::once:/bin/echo === Keystone init -- running hello enclave ===" >> ${initramfs_sysroot}/etc/inittab || true
-    COMMAND echo "::sysinit:/root/keystone/hello-runner /root/keystone/hello /root/keystone/eyrie-rt" >> ${initramfs_sysroot}/etc/inittab || true
-    COMMAND echo "::once:/bin/echo === Keystone init -- spawning shell ===" >> ${initramfs_sysroot}/etc/inittab || true
-    COMMAND echo "::respawn:/sbin/getty -L -n -l /bin/sh /dev/console 0 vt100" >> ${initramfs_sysroot}/etc/inittab || true
+    COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/fix-inittab.sh ${initramfs_sysroot}/etc/inittab
+    COMMAND mkdir -p ${initramfs_sysroot}/keystone
+    COMMAND find ${driver_wrkdir} -name "*.ko" -exec cp -f {} ${initramfs_sysroot}/keystone/ \\\\;
+    COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello-runner ${initramfs_sysroot}/keystone/ 2>/dev/null || true
+    COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/enclave.pkg ${initramfs_sysroot}/keystone/ 2>/dev/null || true
+    COMMAND cp ${CMAKE_SOURCE_DIR}/conf/S90keystone ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
+    COMMAND chmod +x ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
     COMMAND touch ${initramfs_sysroot}/.extracted
   )
   add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot}/.extracted ${linux_srcdir} "linux-symvers"
@@ -276,11 +279,11 @@ add_custom_target("driver" ALL DEPENDS ${driver_srcdir} ${linux_srcdir} "linux-s
 ###############################################################################
 
 add_custom_target("sm" ALL DEPENDS "linux" "buildroot" ${sm_wrkdir_exists} WORKING_DIRECTORY ${sm_wrkdir}
-  COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/generic
+  COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/${platform}
   CROSS_COMPILE=${cross_compile} FW_PAYLOAD_PATH=${linux_image} FW_PAYLOAD=y PLATFORM_RISCV_XLEN=${BITS}
   PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000
-  COMMAND ln -sf fw_payload.bin platform/generic/firmware/fw_jump.bin
-  COMMAND ln -sf fw_payload.elf platform/generic/firmware/fw_jump.elf
+  COMMAND ln -sf fw_payload.bin platform/${platform}/firmware/fw_jump.bin
+  COMMAND ln -sf fw_payload.elf platform/${platform}/firmware/fw_jump.elf
   COMMENT "Building sm"
   )
 

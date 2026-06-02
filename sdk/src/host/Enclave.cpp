@@ -11,6 +11,7 @@ extern "C" {
 #include "common/sha3.h"
 }
 #include "ElfFile.hpp"
+#include "FepPackage.hpp"
 #include "hash_util.hpp"
 
 namespace Keystone {
@@ -24,6 +25,124 @@ Enclave::~Enclave() {
   if (runtimeFile) delete runtimeFile;
   if (enclaveFile) delete enclaveFile;
   destroy();
+}
+
+/* ---- Flat binary loading ---- */
+static inline unsigned int
+fep_flags_to_mode(uint32_t flags) {
+  /* flags: 2=R, 4=W, 8=X, 16=U.
+     mode: 0=RT_NOEXEC, 1=USER_NOEXEC, 2=RT_FULL, 3=USER_FULL */
+  bool is_user = (flags & 16) != 0;
+  if (flags & 8) return is_user ? USER_FULL : RT_FULL;
+  else           return is_user ? USER_NOEXEC : RT_NOEXEC;
+}
+
+Error
+Enclave::loadFlatEnclave(const char* pkgpath) {
+  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
+  FILE* fp = fopen(pkgpath, "rb");
+  if (!fp) {
+    ERROR("cannot open flat package: %s", pkgpath);
+    return Error::FileInitFailure;
+  }
+
+  static char nullpage[FEP_PAGE_SIZE] = {0};
+
+  /* Read header */
+  FepHeader hdr;
+  if (fread(&hdr, sizeof(hdr), 1, fp) != 1 || !fep_header_valid(&hdr)) {
+    ERROR("invalid FEP header");
+    fclose(fp);
+    return Error::FileInitFailure;
+  }
+
+  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
+          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
+
+  /* Read segment table */
+  FepSegment* segs = new FepSegment[hdr.num_segs];
+  if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
+    ERROR("failed to read segment table");
+    delete[] segs;
+    fclose(fp);
+    return Error::FileInitFailure;
+  }
+
+  /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
+  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
+  for (uint32_t i = 0; i < hdr.num_segs; i++) {
+    FepSegment* seg = &segs[i];
+    if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
+        != seg->va_pages) {
+      ERROR("vspace allocation failed for VA 0x%lx", seg->va_base);
+      delete[] segs;
+      fclose(fp);
+      return Error::VSpaceAllocationFailure;
+    }
+  }
+  fprintf(stderr, "[FEP] pass2: loading pages\n");
+
+  /* Pass 2: load runtime segments (!U bit) with physical pages */
+  for (uint32_t pass = 0; pass < 2; pass++) {
+    bool loading_runtime = (pass == 0);
+
+    /* snapshot epmFreeList BEFORE allocating physical pages */
+    if (loading_runtime) {
+      fprintf(stderr, "[FEP] loading runtime pages\n");
+      pMemory->startRuntimeMem();
+    } else {
+      fprintf(stderr, "[FEP] loading eapp pages\n");
+      pMemory->startEappMem();
+    }
+
+    for (uint32_t i = 0; i < hdr.num_segs; i++) {
+      FepSegment* seg = &segs[i];
+      bool is_runtime_seg = !(seg->flags & 16);
+      if (is_runtime_seg != loading_runtime) continue;
+
+      unsigned int mode = fep_flags_to_mode(seg->flags);
+
+      fseek(fp, seg->data_offset, SEEK_SET);
+      for (uint64_t p = 0; p < seg->data_pages; p++) {
+        char page[FEP_PAGE_SIZE] = {0};
+        size_t nr = fread(page, 1, FEP_PAGE_SIZE, fp);
+        if (nr != FEP_PAGE_SIZE && p + 1 != seg->data_pages) {
+          ERROR("short read in segment data");
+          delete[] segs;
+          fclose(fp);
+          return Error::ELFLoadFailure;
+        }
+        if (!pMemory->allocPage(seg->va_base + p * FEP_PAGE_SIZE,
+                                (uintptr_t)page, mode)) {
+          ERROR("allocPage failed VA 0x%lx",
+                seg->va_base + p * FEP_PAGE_SIZE);
+          delete[] segs;
+          fclose(fp);
+          return Error::PageAllocationFailure;
+        }
+      }
+
+      for (uint64_t p = seg->data_pages; p < seg->va_pages; p++) {
+        if (!pMemory->allocPage(seg->va_base + p * FEP_PAGE_SIZE,
+                                (uintptr_t)nullpage, mode)) {
+          ERROR("bss allocPage failed VA 0x%lx",
+                seg->va_base + p * FEP_PAGE_SIZE);
+          delete[] segs;
+          fclose(fp);
+          return Error::PageAllocationFailure;
+        }
+      }
+    }
+  }
+
+  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
+
+  flat_rt_entry   = hdr.rt_entry;
+  flat_user_entry = hdr.user_entry;
+
+  delete[] segs;
+  fclose(fp);
+  return Error::Success;
 }
 
 uint64_t
@@ -280,8 +399,15 @@ Enclave::init(
     pDevice = new KeystoneDevice();
   }
 
-  if (!initFiles(eapppath, runtimepath)) {
-    return Error::FileInitFailure;
+  /* Detect flat package (*.pkg) vs traditional ELF pair */
+  const char* pkg_ext = strrchr(eapppath, '.');
+  bool use_flat = (pkg_ext && strcmp(pkg_ext, ".pkg") == 0);
+
+  if (!use_flat) {
+    /* ---- Traditional ELF loading ---- */
+    if (!initFiles(eapppath, runtimepath)) {
+      return Error::FileInitFailure;
+    }
   }
 
   if (!pDevice->initDevice(params)) {
@@ -289,39 +415,66 @@ Enclave::init(
     return Error::DeviceInitFailure;
   }
 
-  if (!prepareEnclave(alternatePhysAddr)) {
-    destroy();
-    return Error::DeviceError;
+  if (use_flat) {
+    /* Flat package: calculate required pages from file size */
+    struct stat st;
+    if (stat(eapppath, &st) != 0) {
+      destroy();
+      return Error::FileInitFailure;
+    }
+    uintptr_t minPages = (st.st_size / PAGE_SIZE) + 15
+                         + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE;
+    if (pDevice->create(minPages) != Error::Success) {
+      destroy();
+      return Error::DeviceError;
+    }
+    uintptr_t physAddr = alternatePhysAddr ? alternatePhysAddr
+                                           : pDevice->getPhysAddr();
+    pMemory->init(pDevice, physAddr, minPages);
+  } else {
+    if (!prepareEnclave(alternatePhysAddr)) {
+      destroy();
+      return Error::DeviceError;
+    }
   }
 
-  if (!mapElf(runtimeFile)) {
-    destroy();
-    return Error::VSpaceAllocationFailure;
+  if (use_flat) {
+    /* ---- Flat binary loading ---- */
+    if (loadFlatEnclave(eapppath) != Error::Success) {
+      destroy();
+      return Error::ELFLoadFailure;
+    }
+  } else {
+    /* ---- Traditional ELF loading ---- */
+    if (!mapElf(runtimeFile)) {
+      destroy();
+      return Error::VSpaceAllocationFailure;
+    }
+    pMemory->startRuntimeMem();
+    if (loadElf(runtimeFile) != Error::Success) {
+      ERROR("failed to load runtime ELF");
+      destroy();
+      return Error::ELFLoadFailure;
+    }
+    if (!mapElf(enclaveFile)) {
+      destroy();
+      return Error::VSpaceAllocationFailure;
+    }
+    pMemory->startEappMem();
+    if (loadElf(enclaveFile) != Error::Success) {
+      ERROR("failed to load enclave ELF");
+      destroy();
+      return Error::ELFLoadFailure;
+    }
   }
 
-  pMemory->startRuntimeMem();
-
-  if (loadElf(runtimeFile) != Error::Success) {
-    ERROR("failed to load runtime ELF");
-    destroy();
-    return Error::ELFLoadFailure;
-  }
-
-  if (!mapElf(enclaveFile)) {
-    destroy();
-    return Error::VSpaceAllocationFailure;
-  }
-
-  pMemory->startEappMem();
-
-  if (loadElf(enclaveFile) != Error::Success) {
-    ERROR("failed to load enclave ELF");
-    destroy();
-    return Error::ELFLoadFailure;
-  }
+  fprintf(stderr, "[init] flat load complete, continuing\n");
+  fflush(stderr);
 
 /* initialize stack. If not using freemem */
 #ifndef USE_FREEMEM
+  fprintf(stderr, "[init] allocating stack at 0x%lx\n", DEFAULT_STACK_START);
+  fflush(stderr);
   if (!initStack(DEFAULT_STACK_START, DEFAULT_STACK_SIZE, 0)) {
     ERROR("failed to init static stack");
     destroy();
@@ -329,6 +482,7 @@ Enclave::init(
   }
 #endif /* USE_FREEMEM */
 
+  fprintf(stderr, "[init] allocating UTM\n");
   uintptr_t utm_free;
   utm_free = pMemory->allocUtm(params.getUntrustedSize());
 
@@ -343,15 +497,21 @@ Enclave::init(
   }
 
   struct runtime_params_t runtimeParams;
-  runtimeParams.runtime_entry =
-      reinterpret_cast<uintptr_t>(runtimeFile->getEntryPoint());
-  runtimeParams.user_entry =
-      reinterpret_cast<uintptr_t>(enclaveFile->getEntryPoint());
+  if (use_flat) {
+    runtimeParams.runtime_entry   = flat_rt_entry;
+    runtimeParams.user_entry      = flat_user_entry;
+  } else {
+    runtimeParams.runtime_entry =
+        reinterpret_cast<uintptr_t>(runtimeFile->getEntryPoint());
+    runtimeParams.user_entry =
+        reinterpret_cast<uintptr_t>(enclaveFile->getEntryPoint());
+  }
   runtimeParams.untrusted_ptr =
       reinterpret_cast<uintptr_t>(params.getUntrustedMem());
   runtimeParams.untrusted_size =
       reinterpret_cast<uintptr_t>(params.getUntrustedSize());
 
+  fprintf(stderr, "[init] starting freeMem, finalize\n");
   pMemory->startFreeMem();
 
   /* TODO: This should be invoked with some other function e.g., measure() */
@@ -372,8 +532,8 @@ Enclave::init(
     destroy();
     return Error::DeviceMemoryMapError;
   }
-  //}
 
+  fprintf(stderr, "[init] done, finalize OK\n");
   /* ELF files are no longer needed */
   delete enclaveFile;
   delete runtimeFile;

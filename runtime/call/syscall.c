@@ -164,6 +164,14 @@ void handle_syscall(struct encl_ctx* ctx)
 
   ctx->regs.sepc += 4;
 
+  /* Forward legacy SBI ecalls directly to M-mode */
+  if (n == 1) {
+    /* SBI_EXT_0_1_CONSOLE_PUTCHAR */
+    sbi_putchar(arg0);
+    ctx->regs.a0 = 0;
+    return;
+  }
+
   switch (n) {
   case(RUNTIME_SYSCALL_EXIT):
     sbi_exit_enclave(arg0);
