@@ -429,11 +429,95 @@ make -C linux.build \
   ...
 ```
 
-### 当前未解决问题
+### 24. FEP 段对齐导致 GOT 读零 — `scripts/pkg-flat.py`
 
-| 问题 | 地址 | 表现 |
-|------|------|------|
-| 用户代码 NULL 指针访问 | `0x10688` | `ld s0, 0(a5)` 中 `a5=0`，scause=0xd（Load page fault） |
+**问题：** `build_package()` 将 VA 向下对齐到页边界（`va_base = align_down(vaddr)`），但直接写入 ELF 段数据，未在开头插入 gap 填充。用户数据段 VA 为 `0x782f8`，页对齐后为 `0x78000`，gap 为 `0x2F8` 字节。缺少 gap 导致整个数据段在 VA 空间中偏移 `0x2F8` 字节。
+
+**表现：** GOT 条目读到地址偏移后对应的值是全零（原 GOT 条目 `0x0007d408` 位于偏移 `0x3CF0`，但代码读到的是偏移 `0x3FE8` 处的值 `0x0000000000000000`）。`__libc_setup_tls` 通过 GOT 加载 `_dl_ns` 指针时得到 0，执行 `ld s0, 0(a5)` 触发 NULL 指针解引用。
+
+**修复：** 在段数据开头插入 gap 填充：
+```python
+gap = vaddr - va_base
+padded = b'\x00' * gap + raw_data[:filesz]
+```
+
+### 25. glibc TLS 初始化不兼容裸机 enclave
+
+**问题：** 即使 GOT 条目值正确，`__libc_setup_tls` 仍会崩溃。静态链接的 glibc 中 `__libc_start_main` 调用顺序为 `__libc_setup_tls` → `__libc_init_first`，其中 `__libc_setup_tls` 需要 `_dl_ns` 等由 `__libc_init_first` 初始化的数据结构。此外 `__libc_init_first` 需要内核 execve 时传递的 auxv 向量（AT_PHDR、AT_PAGESZ 等），enclave 环境无法完整提供。
+
+**修复：** 跳过 glibc CRT 启动，使用 `_start` 直接调用 `main()`，链接选项 `-nostartfiles -Wl,-e,_start`。输出用 inline ecall a7=1（运行时 `handle_syscall` 捕获后转发到 SM UART）。
+
+### 26. 运行时缺少 legacy putchar ecall 转发 — `runtime/call/syscall.c`
+
+**问题：** 用户态通过 `ecall a7=1`（SBI_EXT_0_1_CONSOLE_PUTCHAR）输出字符时，ecall 从 U-mode 委派到 S-mode 运行时。但运行时的 `handle_syscall` 未处理 `a7=1`，静默忽略请求。
+
+**修复：** 在 `handle_syscall` 开头增加转发逻辑：
+```c
+if (n == 1) {
+    sbi_putchar(arg0);
+    ctx->regs.a0 = 0;
+    return;
+}
+```
+
+### 27. 运行时 `io_syscall_write` 回声未生效
+
+**问题：** 在 runtime/call/io_wrap.c 中对 `fd==1||fd==2` 添加了 sbi_putchar 回声，但因 `copy_from_user` 在某些执行上下文中访问用户内存失败，字符未被输出。
+
+**结论：** 该方案因运行时构建系统缓存问题未能成功生效。当前改用 ecall a7=1 直出方案。
+
+### 28. 用户态 exit ecall 号错误
+
+**问题：** 用户代码使用 `a7=17`（legacy SBI shutdown）退出 enclave，但运行时不处理该 ecall 号。用户代码陷入 `while(1)` 死循环，enclave 不结束。
+
+**修复：** 改为 `a7=1101`（`RUNTIME_SYSCALL_EXIT`，运行时定义的退出 ecall 号）。
+
+### 29. 内核配置问题
+
+| 问题 | 症状 | 修复 |
+|---|---|---|
+| `CONFIG_INITRAMFS_SOURCE=""` | Kernel panic - VFS: Unable to mount root fs | 在 `.config` 中设置正确的 initramfs 路径 |
+| `CONFIG_STACKPROTECTOR=y` | Kernel panic - stack protector | 在 defconfig 中添加 `# CONFIG_STACKPROTECTOR is not set` |
+| 手动 `make -C linux` 时 kernel config 变更 | Linux 内核无法启动或缺少驱动 | 始终用 cmake `make linux` 或提供完整 `CONFIG_*` 参数 |
+| CMake `make linux` 不重新编译 | Initramfs 未更新 | `rm -f linux.build/arch/riscv/boot/Image` + `touch initramfs-sysroot/.extracted` |
+
+### 30. 运行时 debug 标记 'R'
+
+**文件：** `runtime/sys/boot.c:121`
+
+**问题：** `sbi_putchar('R')` 在每次 runtime 启动时输出 'R' 字符，污染用户输出。
+
+**修复：** 注释掉该行。
+
+### 31. NEMU `mnstatus.nmie` 诊断信息
+
+**表现：** enlave 正常退出后 NEMU 打印：
+```
+HIT CRITICAL ERROR: trap when mnstatus.nmie close
+```
+**原因：** SM 在 `exit_enclave` 时设置 `mideleg=0`，在中断关闭状态下执行 `mret`。NEMU 的 RISC-V 规范检查认为这是异常情况。不影响功能，`GOOD TRAP` 和 `halt ret: 0` 确认正确退出。
+
+### 最终 hello enclave 方案
+
+```
+void _start(void) { main(); sbi_exit(1101); }
+int main(void) {
+    while (*s) __asm__("li a7,1\nmv a0,%0\necall\n" : : "r"(*s++));
+}
+```
+
+链接：`-static -nostartfiles -Wl,-e,_start`
+
+**可用 glibc 函数：** string.h（strlen, memcpy, memset）、stdlib.h（atoi, abs）、ctype.h、math.h
+**不可用：** printf、malloc、fopen 等依赖 TLS/stdio 初始化的函数
+
+**测试命令：**
+```bash
+timeout 120 /home/yangxin/xs-env/NEMU-2026.03.r3/build/riscv64-nemu-interpreter \
+  -b -I 10000000000 \
+  build64-xs/sm.build/platform/nemu_xiangshan/firmware/fw_payload.bin \
+  2>&1 | grep -E "hello|page fault|\[SM\].*enclave|exit_enclave"
+```
 
 ## OpenSBI v1 → v3 replacement
 
