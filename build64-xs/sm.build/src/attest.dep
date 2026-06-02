@@ -1,0 +1,25 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/../../src/attest.o: \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/attest.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/enclave.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/sm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/pmp.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_atomic.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/sm-sbi.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_trap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_encoding.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_const.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_scratch.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_asm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_list.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/thread.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/crypto.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/sha3/sha3.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/ed25519/ed25519.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/hkdf_sha3_512/hkdf_sha3_512.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/platform.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/page.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_console.h

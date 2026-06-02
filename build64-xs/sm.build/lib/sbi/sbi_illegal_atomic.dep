@@ -1,0 +1,14 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/lib/sbi/sbi_illegal_atomic.o: \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/sbi/sbi_illegal_atomic.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_asm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_encoding.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_const.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_hart.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitops.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_trap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_scratch.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_illegal_atomic.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_illegal_insn.h

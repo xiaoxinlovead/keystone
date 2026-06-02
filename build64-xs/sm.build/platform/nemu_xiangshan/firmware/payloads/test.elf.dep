@@ -1,0 +1,4 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/firmware/payloads/test.elf.ld: \
+ /home/yangxin/xs-env/keystone/sm/opensbi/firmware/payloads/test.elf.ldS \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h

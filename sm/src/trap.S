@@ -5,6 +5,7 @@
   .option norvc
   .section .text.init,"ax",@progbits
   .globl trap_vector_enclave
+  .align 2
 
 trap_vector_enclave:
     /* Swap TP and MSCRATCH */

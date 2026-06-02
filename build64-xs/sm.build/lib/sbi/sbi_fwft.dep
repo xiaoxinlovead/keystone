@@ -1,0 +1,19 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/lib/sbi/sbi_fwft.o: /home/yangxin/xs-env/keystone/sm/opensbi/lib/sbi/sbi_fwft.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_console.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitmap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitops.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall_interface.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_error.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_hart.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_heap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_hfence.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_scratch.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_asm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_encoding.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_const.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_string.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_tlb.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_hartmask.h

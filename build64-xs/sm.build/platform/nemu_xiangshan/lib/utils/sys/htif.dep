@@ -1,0 +1,11 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/lib/utils/sys/htif.o: /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/sys/htif.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_locks.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_console.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_error.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall_interface.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_system.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_list.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi_utils/sys/htif.h

@@ -1,0 +1,27 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/lib/utils/fdt/fdt_driver.o: \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/fdt/fdt_driver.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/libfdt.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/libfdt_env.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_string.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_byteorder.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/fdt.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_console.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_error.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall_interface.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi_utils/fdt/fdt_driver.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi_utils/fdt/fdt_helper.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_domain.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_locks.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_list.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_hartmask.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitmap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitops.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_scratch.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_asm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_encoding.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_const.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_domain_context.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_domain_data.h

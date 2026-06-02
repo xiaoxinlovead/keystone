@@ -1,0 +1,23 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/../../src/platform/nemu_xiangshan/platform.o: \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/platform.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../enclave.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../sm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../pmp.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_atomic.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../sm-sbi.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_trap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_encoding.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_const.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_scratch.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_asm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_list.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../thread.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../crypto.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../sha3/sha3.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../ed25519/ed25519.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../hkdf_sha3_512/hkdf_sha3_512.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/../../platform/nemu_xiangshan/platform.h

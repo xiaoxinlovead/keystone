@@ -1,0 +1,4 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/../../src/mprv.o: \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/mprv.S \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h

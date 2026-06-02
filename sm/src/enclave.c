@@ -55,7 +55,7 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
     // passing parameters for a first run
     csr_write(sepc, (uintptr_t) enclaves[eid].params.user_entry);
     regs->mepc = (uintptr_t) enclaves[eid].params.runtime_entry - 4; // regs->mepc will be +4 before sbi_ecall_handler return
-    regs->mstatus = (1 << MSTATUS_MPP_SHIFT);
+    regs->mstatus = (1 << MSTATUS_MPP_SHIFT) | MSTATUS_FS | MSTATUS_VS;
     // $a1: (PA) DRAM base,
     regs->a1 = (uintptr_t) enclaves[eid].pa_params.dram_base;
     // $a2: (PA) DRAM size,
@@ -88,6 +88,14 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
 
   // Setup any platform specific defenses
   platform_switch_to_enclave(&(enclaves[eid]));
+
+  /* Verify runtime binary is loaded */
+  {
+    uintptr_t rpa = enclaves[eid].pa_params.runtime_base;
+    volatile uint32_t *rp = (volatile uint32_t *)(uintptr_t)rpa;
+    sbi_printf("[SM] runtime PA=0x%lx: insns 0x%08x 0x%08x 0x%08x 0x%08x\n",
+               rpa, rp[0], rp[1], rp[2], rp[3]);
+  }
 
   /* Debug: walk page table to verify runtime_entry is mapped */
   {

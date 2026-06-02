@@ -1,0 +1,7 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/lib/sbi/sbi_bitmap.o: \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/sbi/sbi_bitmap.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitmap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_bitops.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h

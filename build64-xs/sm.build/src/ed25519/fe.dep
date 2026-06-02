@@ -1,0 +1,7 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/../../src/ed25519/fe.o: \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/ed25519/fe.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/ed25519/fixedint.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/ed25519/fe.h

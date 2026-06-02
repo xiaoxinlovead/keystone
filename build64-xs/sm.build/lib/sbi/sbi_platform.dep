@@ -1,0 +1,17 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/lib/sbi/sbi_platform.o: \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/sbi/sbi_platform.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_console.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_platform.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall_interface.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_error.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_scratch.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_asm.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/riscv_encoding.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_const.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_version.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_trap_ldst.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_trap.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_string.h

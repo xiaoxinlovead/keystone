@@ -1,0 +1,8 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/../../src/hmac_sha3/hmac_sha3.o: \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/hmac_sha3/hmac_sha3.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/hmac_sha3/hmac_sha3.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/hmac_sha3/../sha3/sha3.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_string.h

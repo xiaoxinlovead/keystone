@@ -41,7 +41,6 @@ static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long
       break;
     case SBI_SM_RUN_ENCLAVE:
       retval = sbi_sm_run_enclave(regs, regs->a0, out);
-      __builtin_unreachable();
       break;
     case SBI_SM_RESUME_ENCLAVE:
       retval = sbi_sm_resume_enclave(regs, regs->a0, out);

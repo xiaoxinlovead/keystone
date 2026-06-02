@@ -1,0 +1,12 @@
+/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/lib/utils/libfdt/fdt_addresses.o: \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/fdt_addresses.c \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_visibility.h \
+ /home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/kconfig/autoconf.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/libfdt_env.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_string.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_types.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_byteorder.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/fdt.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/libfdt.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/libfdt_env.h \
+ /home/yangxin/xs-env/keystone/sm/opensbi/lib/utils/libfdt/libfdt_internal.h
