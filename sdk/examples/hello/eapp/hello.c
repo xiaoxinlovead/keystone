@@ -4,8 +4,8 @@ int main(void);
 void _start(void)
 {
   main();
-  /* exit via ecall */
-  __asm__ __volatile__ ("li a7, 17\nli a0, 0\necall\n");
+  /* exit via runtime syscall (RUNTIME_SYSCALL_EXIT = 1101) */
+  __asm__ __volatile__ ("li a7, 1101\nli a0, 0\necall\n");
   while (1);
 }
 

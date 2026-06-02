@@ -117,8 +117,8 @@ eyrie_boot(uintptr_t dummy, // $a0 contains the return value from the SBI
            uintptr_t utm_vaddr,
            uintptr_t utm_size)
 {
-  /* Force output before any initialization to confirm runtime entry */
-  sbi_putchar('R');
+  /* Debug output disabled */
+  /* sbi_putchar('R'); */
 
   /* set initial values */
   load_pa_start = dram_base;
