@@ -36,17 +36,24 @@ Root cause: the FEP writer padded only to the end of the page, but not the begin
 
 **Problem:** Even with the FEP alignment fix, the hello enclave crashed at `__libc_setup_tls` (user code VA `0x10688`). The statically-linked glibc's TLS initialization (`_dl_ns`, `_dl_tls_*`) expects runtime dynamic linker data structures that are not initialized in the bare-metal enclave environment.
 
-**Fix:** Replace the standard C library startup (`_start → __libc_start_main → main → printf`) with a minimal startup that directly invokes SBI ecalls:
-
-- `hello.c`: Define `_start` directly, use inline SBI ecalls (`a7=1` for putchar, `a7=17` for exit) instead of libc `printf`.
-- `CMakeLists.txt`: Add `-nostartfiles -Wl,-e,_start` to `target_link_libraries` to exclude CRT startup code.
+**Fix:** Skip glibc's CRT startup entirely. Use `_start` as entry point (via `-nostartfiles -Wl,-e,_start`), call `main()` manually from `_start`. Output via inline ecall a7=1 (forwarded by runtime to SM UART).
 
 ```c
-void _start(void) {
-  my_puts("hello, world!\n");
-  sbi_exit(0);
+void _start(void) { main(); /* exit ecall */ }
+int main(void) {
+  /* ecall a7=1 output */
+  while (*s) __asm__("li a7,1\nmv a0,%0\necall\n" : : "r"(*s++));
 }
 ```
+
+**glibc function compatibility with CRT bypassed:**
+
+| Works | Broken |
+|---|---|
+| string.h: strlen, memcpy, memset, strcmp | printf, puts, fprintf |
+| stdlib.h: atoi, abs, rand (no-lock) | malloc, calloc, free |
+| ctype.h: isdigit, isalpha | fopen, fread, fwrite |
+| math.h: sin, cos, sqrt, pow | Any function using TLS or FILE* |
 
 The runtime (`runtime/call/syscall.c`) was also patched to forward legacy SBI putchar ecalls (`a7=1`) from U-mode to M-mode via `sbi_putchar(arg0)`.
 
