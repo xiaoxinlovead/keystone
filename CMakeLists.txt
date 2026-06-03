@@ -379,3 +379,13 @@ add_custom_target(
     ./scripts/travis.sh ${CMAKE_SOURCE_DIR}/tests
   COMMENT "Running tests"
 )
+
+# Quick enclave test (requires fw_payload.bin + NEMU)
+add_custom_target(
+  "quick-test"
+  COMMAND ${CMAKE_SOURCE_DIR}/scripts/test-nemu.sh
+    ${sm_wrkdir}/platform/${platform}/firmware/fw_payload.bin
+  COMMENT "Quick NEMU enclave test"
+  DEPENDS ${fw_bin}
+  USES_TERMINAL
+)
