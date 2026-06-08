@@ -230,10 +230,7 @@ if(initramfs)
     COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/fix-inittab.sh ${initramfs_sysroot}/etc/inittab
     COMMAND mkdir -p ${initramfs_sysroot}/keystone
     COMMAND find ${driver_wrkdir} -name "*.ko" -exec cp -f {} ${initramfs_sysroot}/keystone/ \\\\;
-    COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/ara_test_keystone-runner ${initramfs_sysroot}/keystone/ 2>/dev/null || true
-    COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/ara_test_keystone ${initramfs_sysroot}/keystone/ 2>/dev/null || true
-    COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/enclave.pkg ${initramfs_sysroot}/keystone/ 2>/dev/null || true
-    COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/eyrie-rt ${initramfs_sysroot}/keystone/ 2>/dev/null || true
+    # ara_test_keystone files removed (replaced by ara_test_context in overlay)
     COMMAND cp ${CMAKE_SOURCE_DIR}/conf/S90keystone ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
     COMMAND chmod +x ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
     COMMAND touch ${initramfs_sysroot}/.extracted
@@ -316,10 +313,12 @@ add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello ${overlay_root}/keystone/ 2>/dev/null || true
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/hello-runner ${overlay_root}/keystone/ 2>/dev/null || true
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/hello/eyrie-rt ${overlay_root}/keystone/ 2>/dev/null || true
-  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/enclave.pkg ${overlay_root}/keystone/ 2>/dev/null || true
-  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/ara_test_keystone-runner ${overlay_root}/keystone/ 2>/dev/null || true
-  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/ara_test_keystone ${overlay_root}/keystone/ 2>/dev/null || true
-  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_keystone/eyrie-rt ${overlay_root}/keystone/ara_test_keystone-rt 2>/dev/null || true
+  # ara_test_keystone removed (replaced by ara_test_context)
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_context/ara_test_fc.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_context/ara_test_mm.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_context/ara_test_both.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_context/ara_test_check.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/ara_test_context/ara_test_context-runner ${overlay_root}/keystone/ 2>/dev/null || true
 )
 add_custom_target("image" DEPENDS "buildroot" "sm"
   COMMENT "Generating image"

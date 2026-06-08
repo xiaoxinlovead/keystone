@@ -1,6 +1,6 @@
 project(keystone-host CXX)
 
-set(CFLAGS      "-Wall -Werror")
+set(CFLAGS      "-Wall -Werror -march=rv64gc -mabi=lp64d")
 set(LDFLAGS     "-static")
 
 set(SOURCE_FILES

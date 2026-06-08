@@ -1,8 +1,12 @@
 #!/bin/sh
-echo "Starting keystone ara_test enclave..."
-insmod /keystone/keystone-driver.ko 2>/dev/null || true
+echo "Starting keystone ara_test_context..."
+insmod /root/keystone/keystone-driver.ko 2>/dev/null || true
 MINOR=$(grep keystone_enclave /proc/misc 2>/dev/null | awk '{print $1}')
 if [ -n "$MINOR" ]; then
   mknod /dev/keystone_enclave c 10 $MINOR 2>&1
 fi
-/keystone/ara_test_keystone-runner /keystone/enclave.pkg
+/root/keystone/ara_test_context-runner \
+  /root/keystone/ara_test_fc.pkg \
+  /root/keystone/ara_test_mm.pkg \
+  /root/keystone/ara_test_both.pkg \
+  /root/keystone/ara_test_check.pkg
