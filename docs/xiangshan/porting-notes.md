@@ -359,6 +359,13 @@ Pre-built DTB at `nemu_board/dts/build/xiangshan.dtb` (1 hart, 128MB DRAM).
 | 20 | `sm/plat/nemu_xiangshan/platform.c` | mod | Console fallback when `fdt_serial_init()` fails on NEMU |
 | 21 | `sm/src/trap.S` | mod | Add `.align 2` before `trap_vector_enclave` |
 | 22 | `sm/src/enclave.c` | mod | Preserve `MSTATUS_FS | MSTATUS_VS` in `regs->mstatus` |
+| 23 | `CMakeLists.txt` | mod | Add `FW_PAYLOAD_FDT_OFFSET=0x2600000` — relocate FDT out of PMP M-mode region AND after kernel image (initially 0x2200000 but FDT overlapped with 33.9MB kernel) |
+| 24 | `sm/plat/nemu_xiangshan/configs/defconfig` | mod | Add `CONFIG_FDT_SERIAL_XILINX_UARTLITE=y` — enable proper UARTLITE driver |
+| 25 | `conf/linux64-xiangshan-defconfig` | mod | Add `# CONFIG_EFI is not set` + fix duplicate CMA entries — EFI auto-enabled via EFIVAR_FS caused non-EFI emu to hang |
+| 26 | `conf/linux64-xiangshan-defconfig` | mod | Add `# CONFIG_RISCV_ISA_ZICBOZ is not set` — emu doesn't support `cbo.zero`; `clear_page` crashes with Illegal Instruction |
+| 27 | `sdk/examples/hello/eapp/hello.c` | mod | Add `int main(void);` forward declaration — GCC 15 `-Werror=implicit-function-declaration` |
+| 28 | `sdk/examples/CMakeLists.txt` | mod | Add `add_subdirectory(hello-vector)` — was missing from examples list |
+| 29 | `CMakeLists.txt` image-deps | mod | Add hello-vector files (enclave.pkg, vector-runner, vector, vector-rt) to initramfs overlay |
 
 ## 调试与修复记录
 
@@ -620,6 +627,75 @@ Provides dummy implementations and data symbols:
 Added `platform-cppflags-y = -I$(src_dir)/include -I$(src)/../src` as backup
 include path. Note: v3 ignores config.mk; the effective include path is set
 in objects.mk via `platform-cflags-y`.
+
+### 32. FDT 地址在固件 PMP 区域内导致 Linux 启动卡死
+
+**表现：** OpenSBI/SM 初始化完成，显示 "Boot HART Debug Triggers: 4 triggers" 后无输出，系统卡死。
+
+**根因：** FDT 在 `fw_payload.bin` 中内嵌于 OpenSBI `.rodata` 段，地址为 `0x80024020`。该地址位于 OpenSBI 固件 PMP 区域（`0x80000000-0x8003ffff`），被配置为 M-mode only。当 OpenSBI 跳转到 Linux（S-mode）时，传入 `a1=0x80024020`，Linux 尝试读取 FDT 时触发 PMP 访问违例。
+
+**与 QEMU 的对照：** QEMU virt 平台的 `sm/opensbi/platform/generic/objects.mk:34` 定义了 `FW_PAYLOAD_FDT_OFFSET=0x2200000`，`fw_next_arg1` 返回 `_fw_start + 0x2200000 = 0x82200000`，不在固件 PMP 区域内。`nemu_xiangshan` 平台缺乏此定义，走 pass-through 路径。
+
+**初次修复：** `CMakeLists.txt:284` — 在 sm 构建命令中添加 `FW_PAYLOAD_FDT_OFFSET=0x2200000`。
+
+**问题：** `FW_PAYLOAD_FDT_OFFSET=0x2200000` 让 FDT 位于 `0x82200000`。但内核 Image 为 33.9MB（加载于 `0x80200000`），结束于 `0x8225AAB0`。FDT 在 `0x82200000` 覆盖了内核的代码/数据，导致内核早期启动时崩溃。
+
+**最终修复：** 使用 `FW_PAYLOAD_FDT_OFFSET=0x2600000`，FDT 位于 `0x82600000`（内核结束之后）：
+```cmake
+FW_PAYLOAD_FDT_OFFSET=0x2600000
+```
+
+### 33. 缺少 Xilinx UARTLITE 串口驱动 — `sm/plat/nemu_xiangshan/configs/defconfig`
+
+**表现：** `fdt_serial_init()` 无法识别 DTB 中的 `xlnx,xps-uartlite-1.00.a` 节点，回退到 `early_putc()` 裸写（无 TXFULL 状态检查）。
+
+**根因：** `sm/plat/nemu_xiangshan/configs/defconfig` 缺少 `CONFIG_FDT_SERIAL_XILINX_UARTLITE=y`，导致 carray 中不包含该驱动，`fdt_serial_init()` 扫描全部 DT 节点时无法匹配。
+
+**修复：** 添加 `CONFIG_FDT_SERIAL_XILINX_UARTLITE=y`，并强制删除 `sm.build` 目录以重新生成 carray：
+```diff
+ CONFIG_FDT_SERIAL_UART8250=y
++CONFIG_FDT_SERIAL_XILINX_UARTLITE=y
+ CONFIG_SERIAL_SEMIHOSTING=y
+```
+
+### 34. emu 不支持 Z 扩展 — 内核 Illegal Instruction 崩溃
+
+**表现：** Linux 内核启动初期在 `clear_page` 中 Illegal Instruction 崩溃。
+
+**根因：** emu（Verilog转C模拟器）不支持 `zicboz`、`zicbom`、`zba`、`zbb`、`zbc` 等 Z 扩展，但这些扩展在 Linux 内核中均为 `default y`，通过 alternatives patching 在运行时检测 DTB 中的 ISA 声明后自动启用。
+
+emu 不支持的 Z 扩展列表：
+```
+zba zbb zbc zbs zfh zfhmin zic64b zicbom zicbop zicboz
+zicntr zihpm zicsr zifencei zkn zknd zkne zknh zksed zksh zkt
+zbkb zbkc zbkx zvbb zvfh zvfhmin zvkt zvl128b zvl64b
+```
+
+**修复：** 在 `conf/linux64-xiangshan-defconfig` 中禁用 emu 不支持的 Z 扩展：
+```diff
++# CONFIG_RISCV_ISA_ZICBOZ is not set
++# CONFIG_RISCV_ISA_ZICBOM is not set
++# CONFIG_RISCV_ISA_ZBA is not set
++# CONFIG_RISCV_ISA_ZBB is not set
++# CONFIG_RISCV_ISA_ZBC is not set
+```
+
+### 35. 内核 `CONFIG_EFI=y` 导致非 EFI 平台启动卡死
+
+**表现：** Linux 内核启动初期在 `clear_page` 函数中崩溃，`cause=2 (Illegal instruction)`。
+
+**根因：** `CONFIG_RISCV_ISA_ZICBOZ` 的 `default y` 使内核在 `clear_page` 中使用了 `cbo.zero` 指令。Xiangshan NEMU 支持该指令，但 Verilog-to-C 的 emu 不支持 `cbo.zero`。
+
+**修复：** 在 `conf/linux64-xiangshan-defconfig` 中添加 `# CONFIG_RISCV_ISA_ZICBOZ is not set`，使 `clear_page` 退化为 `__memset`。
+
+### 35. 内核 `CONFIG_EFI=y` 导致非 EFI 平台启动卡死
+
+**表现：** Linux 内核无任何输出，即使 FDT 地址和 UART 驱动都已正确。
+
+**根因：** `CONFIG_EFI=y` 及其依赖（`EFI_STUB`、`EFI_EARLYCON`、`EFI_PARAMS_FROM_FDT`）在非 EFI 的 NEMU 平台上被自动选中（通过 `CONFIG_EFIVAR_FS=y`），内核在 EFI 初始化时卡死。
+
+**修复：** 在 `conf/linux64-xiangshan-defconfig` 中添加 `# CONFIG_EFI is not set`。
+同时清理了重复 3 次的 `CONFIG_CMA` / `CONFIG_DMA_CMA` 配置项。
 
 ## Commands
 

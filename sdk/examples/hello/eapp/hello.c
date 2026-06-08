@@ -7,6 +7,7 @@ static void sbi_exit(int code) {
 }
 static void my_puts(const char *s) { while (*s) sbi_putchar(*s++); }
 
+int main(void);
 void _start(void) { main(); sbi_exit(0); while (1); }
 
 int main(void) {

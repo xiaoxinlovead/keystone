@@ -1,8 +1,8 @@
 #!/bin/sh
-echo "Starting keystone hello enclave (loadElf)..."
+echo "Starting keystone ara_test enclave..."
 insmod /keystone/keystone-driver.ko 2>/dev/null || true
 MINOR=$(grep keystone_enclave /proc/misc 2>/dev/null | awk '{print $1}')
 if [ -n "$MINOR" ]; then
   mknod /dev/keystone_enclave c 10 $MINOR 2>&1
 fi
-/keystone/hello-runner /keystone/hello /keystone/eyrie-rt
+/keystone/ara_test_keystone-runner /keystone/enclave.pkg

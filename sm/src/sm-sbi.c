@@ -68,6 +68,7 @@ unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retv
 unsigned long sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request,
                                    struct sbi_ecall_return *out)
 {
+  regs->mepc += 4;
   regs->a0 = stop_enclave(regs, request, cpu_get_enclave_id());
   regs->mepc += 4;
   out->skip_regs_update = true;
