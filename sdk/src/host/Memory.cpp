@@ -76,10 +76,12 @@ Memory::allocPage(uintptr_t va, uintptr_t src, unsigned int mode) {
     case USER_NOEXEC: {
       *pte =
           pte_create(page_addr, PTE_D | PTE_A | PTE_R | PTE_W | PTE_U | PTE_V);
+      writeMem(src, (uintptr_t)page_addr << PAGE_BITS, PAGE_SIZE);
       break;
     }
     case RT_NOEXEC: {
       *pte = pte_create(page_addr, PTE_D | PTE_A | PTE_R | PTE_W | PTE_V);
+      writeMem(src, (uintptr_t)page_addr << PAGE_BITS, PAGE_SIZE);
       break;
     }
     case RT_FULL: {
@@ -96,7 +98,8 @@ Memory::allocPage(uintptr_t va, uintptr_t src, unsigned int mode) {
     }
     case UTM_FULL: {
       assert(!src);
-      *pte = pte_create(page_addr, PTE_D | PTE_A | PTE_R | PTE_W | PTE_V);
+      // PTE_U needed for U-mode (eapp) access to shared untrusted memory
+      *pte = pte_create(page_addr, PTE_D | PTE_A | PTE_R | PTE_W | PTE_U | PTE_V);
       break;
     }
     default: {
@@ -109,10 +112,19 @@ Memory::allocPage(uintptr_t va, uintptr_t src, unsigned int mode) {
 }
 
 pte*
-Memory::__ept_continue_walk_create(uintptr_t addr, pte* pte) {
+Memory::__ept_continue_walk_create(uintptr_t addr, pte* ptePtr) {
   uint64_t free_ppn = ppn(epmFreeList);
-  *pte              = ptd_create(free_ppn);
+  /* Intermediate PTEs must NOT have U bit (reserved per spec) */
+  *ptePtr = ptd_create(free_ppn);
   epmFreeList += PAGE_SIZE;
+  if (addr == 0x41000000) {
+    static int _count = 0; _count++;
+    fprintf(stderr, "[HOST_CWC%d] epmFL=0x%lx free_ppn=%lu pteVal=0x%lx ptePtr[0]=0x%lx\n",
+            _count, (unsigned long)epmFreeList, (unsigned long)free_ppn,
+            (unsigned long)pte_val(*ptePtr),
+            (unsigned long)ptePtr[0].pte);
+    fflush(stderr);
+  }
   return __ept_walk_create(addr);
 }
 
@@ -123,6 +135,10 @@ Memory::__ept_walk_internal(uintptr_t addr, int create) {
   int i;
   for (i = (VA_BITS - RISCV_PGSHIFT) / RISCV_PGLEVEL_BITS - 1; i > 0; i--) {
     size_t idx = pt_idx(addr, i);
+    if (addr == 0x41000000 && i == 1) {
+      fprintf(stderr, "[WALK_DBG] addr=0x%lx i=%d idx=%lu t[idx]=0x%lx\n", (unsigned long)addr, i, (unsigned long)idx, (unsigned long)pte_val(t[idx]));
+      fflush(stderr);
+    }
     if (!(pte_val(t[idx]) & PTE_V)) {
       return create ? __ept_continue_walk_create(addr, &t[idx]) : 0;
     }

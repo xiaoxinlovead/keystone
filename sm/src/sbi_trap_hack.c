@@ -1,4 +1,5 @@
 #include "enclave.h"
+#include "cpu.h"
 #include <sbi/riscv_asm.h>
 #include <sbi/riscv_encoding.h>
 #include <sbi/sbi_console.h>
@@ -109,17 +110,13 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
     mcause &= ~(1UL << (__riscv_xlen - 1));
     switch (mcause) {
     case IRQ_M_TIMER: {
-      regs->mepc -= 4;
-      sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
-      regs->a0 = SBI_ERR_SM_ENCLAVE_INTERRUPTED;
-      regs->mepc += 4;
+      if (cpu_is_enclave_context())
+        sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
       break;
                       }
     case IRQ_M_SOFT: {
-      regs->mepc -= 4;
-      sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
-      regs->a0 = SBI_ERR_SM_ENCLAVE_INTERRUPTED;
-      regs->mepc += 4;
+      if (cpu_is_enclave_context())
+        sbi_sm_stop_enclave(regs, STOP_TIMER_INTERRUPT, &out);
       break;
                      }
     default:

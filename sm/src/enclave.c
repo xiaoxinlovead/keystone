@@ -75,6 +75,13 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
     csr_write(satp, enclaves[eid].encl_satp);
   }
 
+  /* Always restore enclave page table (needed on resume: swap_prev_smode_csrs
+     can save the host's Sv48 SATP and restore it incorrectly for Sv39) */
+  csr_write(satp, enclaves[eid].encl_satp);
+
+  /* Disable M-mode timer interrupts while enclave runs */
+  csr_clear(mie, MIP_MTIP);
+
   switch_vector_enclave();
 
   // set PMP
@@ -179,6 +186,9 @@ static inline void context_switch_to_host(struct sbi_trap_regs *regs,
   swap_prev_mstatus(&enclaves[eid].threads[0], regs, regs->mstatus);
 
   switch_vector_host();
+
+  /* Re-enable M-mode timer interrupts for host */
+  csr_set(mie, MIP_MTIP);
 
   uintptr_t pending = csr_read(mip);
 
@@ -577,9 +587,10 @@ unsigned long run_enclave(struct sbi_trap_regs *regs, enclave_id eid)
 {
   int runable;
 
-  sbi_printf("[SM] run_enclave: eid=%d runtime=0x%lx user=0x%lx\n",
+  sbi_printf("[SM] run_enclave: eid=%d runtime=0x%lx user=0x%lx from mepc=0x%lx\n",
              eid, enclaves[eid].pa_params.runtime_base,
-             enclaves[eid].pa_params.user_base);
+             enclaves[eid].pa_params.user_base,
+             regs->mepc);
 
   spin_lock(&encl_lock);
   runable = (ENCLAVE_EXISTS(eid)

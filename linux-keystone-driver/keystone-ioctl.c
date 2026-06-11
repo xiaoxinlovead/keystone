@@ -238,18 +238,22 @@ long keystone_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 
   switch (cmd) {
     case KEYSTONE_IOC_CREATE_ENCLAVE:
+      keystone_err("ioctl cmd=CREATE\n");
       ret = keystone_create_enclave(filep, (unsigned long) data);
       break;
     case KEYSTONE_IOC_FINALIZE_ENCLAVE:
+      keystone_err("ioctl cmd=FINALIZE\n");
       ret = keystone_finalize_enclave((unsigned long) data);
       break;
     case KEYSTONE_IOC_DESTROY_ENCLAVE:
       ret = keystone_destroy_enclave(filep, (unsigned long) data);
       break;
     case KEYSTONE_IOC_RUN_ENCLAVE:
+      keystone_err("ioctl cmd=RUN eid=%lu\n", ((struct keystone_ioctl_run_enclave*)data)->eid);
       ret = keystone_run_enclave((unsigned long) data);
       break;
     case KEYSTONE_IOC_RESUME_ENCLAVE:
+      keystone_err("ioctl cmd=RESUME eid=%lu\n", ((struct keystone_ioctl_run_enclave*)data)->eid);
       ret = keystone_resume_enclave((unsigned long) data);
       break;
     /* Note that following commands could have been implemented as a part of ADD_PAGE ioctl.

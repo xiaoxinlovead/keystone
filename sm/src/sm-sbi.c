@@ -49,7 +49,6 @@ unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long ei
   ret = resume_enclave(regs, (unsigned int) eid);
   if (!regs->zero)
     regs->a0 = ret;
-  regs->mepc += 4;
 
   out->skip_regs_update = true;
   return 0;
@@ -60,7 +59,6 @@ unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retv
 {
   regs->a0 = exit_enclave(regs, cpu_get_enclave_id());
   regs->a1 = retval;
-  regs->mepc += 4;
   out->skip_regs_update = true;
   return 0;
 }
@@ -68,9 +66,7 @@ unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retv
 unsigned long sbi_sm_stop_enclave(struct sbi_trap_regs *regs, unsigned long request,
                                    struct sbi_ecall_return *out)
 {
-  regs->mepc += 4;
-  regs->a0 = stop_enclave(regs, request, cpu_get_enclave_id());
-  regs->mepc += 4;
+  stop_enclave(regs, request, cpu_get_enclave_id());
   out->skip_regs_update = true;
   return 0;
 }

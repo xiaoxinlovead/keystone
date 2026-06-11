@@ -575,6 +575,11 @@ Enclave::destroy() {
 }
 
 Error
+Enclave::resume(uintptr_t* retval) {
+  return pDevice->resume(retval);
+}
+
+Error
 Enclave::run(uintptr_t* retval) {
   if (params.isSimulated()) {
     return Error::Success;
