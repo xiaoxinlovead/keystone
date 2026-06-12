@@ -26,3 +26,6 @@ Makefile
 .vscode/
 .idea/
 *.swp
+build64-xs/
+initramfs-sysroot/
+linux.build/

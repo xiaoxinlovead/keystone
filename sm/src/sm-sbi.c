@@ -3,9 +3,7 @@
 // All Rights Reserved. See LICENSE for license details.
 //------------------------------------------------------------------------------
 #include "sm-sbi.h"
-#include "pmp.h"
 #include "enclave.h"
-#include "page.h"
 #include "cpu.h"
 #include "platform-hook.h"
 #include "plugins/plugins.h"
@@ -34,7 +32,7 @@ unsigned long sbi_sm_destroy_enclave(unsigned long eid)
 }
 
 unsigned long sbi_sm_run_enclave(struct sbi_trap_regs *regs, unsigned long eid,
-                                 struct sbi_ecall_return *out)
+                                  struct sbi_ecall_return *out)
 {
   regs->a0 = run_enclave(regs, (unsigned int) eid);
   regs->mepc += 4;
