@@ -51,10 +51,20 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
              csr_read(medeleg), csr_read(mideleg));
   csr_write(mideleg, interrupts);
 
+  /* Always set FS=3 (float dirty) and VS=3 (vector dirty) on every
+   * enclave entry (both first run and resume), so vector instructions
+   * don't fault.  swap_prev_mstatus restores the HOST's mstatus which
+   * has VS=0, FS=0 — the enclave needs them dirty. */
+  regs->mstatus |= MSTATUS_FS | MSTATUS_VS;
+
   if(load_parameters) {
     // passing parameters for a first run
     csr_write(sepc, (uintptr_t) enclaves[eid].params.user_entry);
     regs->mepc = (uintptr_t) enclaves[eid].params.runtime_entry - 4; // regs->mepc will be +4 before sbi_ecall_handler return
+    /* Adjust saved host mepc so context_switch_to_host restores
+     * ecall_addr + 4 (past the ecall), NOT ecall_addr (which would
+     * re-execute ecall with a0=EDGE_CALL_HOST on mret). */
+    enclaves[eid].threads[0].prev_mepc += 4;
     regs->mstatus = (1 << MSTATUS_MPP_SHIFT) | MSTATUS_FS | MSTATUS_VS;
     // $a1: (PA) DRAM base,
     regs->a1 = (uintptr_t) enclaves[eid].pa_params.dram_base;

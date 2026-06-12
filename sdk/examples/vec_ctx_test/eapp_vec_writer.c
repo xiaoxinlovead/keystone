@@ -16,6 +16,9 @@ static void sbi_puthex(unsigned long x) {
 static void sbi_exit(int code) {
   __asm__ __volatile__ ("li a7,1101\nmv a0,%0\necall\n" : : "r"((unsigned long)code) : "a7","a0");
 }
+static void sbi_stop(void) {
+  __asm__ __volatile__ ("li a7,1104\nli a0,1\necall\n" : : : "a7","a0");
+}
 
 /* Store all 32 v registers to UTM using LMUL=m1, VL=1.
  * Each vse64.v stores 1 element (8 bytes), offset by 8 each.
@@ -144,38 +147,13 @@ void _start(void) {
     : "t0", "memory"
   );
 
-  sbi_puts("A: saved, verifying read-back\n");
+  UTM_BASE[64] = 0xCAFE; /* marker: before stop */
 
-  /* Zero out all v registers */
-  __asm__ __volatile__ (
-    VSET_M1
-    "vmv.v.i v0, 0\n\t"  "vmv.v.i v1, 0\n\t"
-    "vmv.v.i v2, 0\n\t"  "vmv.v.i v3, 0\n\t"
-    "vmv.v.i v4, 0\n\t"  "vmv.v.i v5, 0\n\t"
-    "vmv.v.i v6, 0\n\t"  "vmv.v.i v7, 0\n\t"
-    "vmv.v.i v8, 0\n\t"  "vmv.v.i v9, 0\n\t"
-    "vmv.v.i v10, 0\n\t" "vmv.v.i v11, 0\n\t"
-    "vmv.v.i v12, 0\n\t" "vmv.v.i v13, 0\n\t"
-    "vmv.v.i v14, 0\n\t" "vmv.v.i v15, 0\n\t"
-    "vmv.v.i v16, 0\n\t" "vmv.v.i v17, 0\n\t"
-    "vmv.v.i v18, 0\n\t" "vmv.v.i v19, 0\n\t"
-    "vmv.v.i v20, 0\n\t" "vmv.v.i v21, 0\n\t"
-    "vmv.v.i v22, 0\n\t" "vmv.v.i v23, 0\n\t"
-    "vmv.v.i v24, 0\n\t" "vmv.v.i v25, 0\n\t"
-    "vmv.v.i v26, 0\n\t" "vmv.v.i v27, 0\n\t"
-    "vmv.v.i v28, 0\n\t" "vmv.v.i v29, 0\n\t"
-    "vmv.v.i v30, 0\n\t" "vmv.v.i v31, 0\n\t"
-  );
+  sbi_stop(); /* yield to host → host runs B (trash vectors) → host resumes A */
 
-  /* Read back from UTM into v registers */
-  __asm__ __volatile__ (
-    LOAD_ALL("(%[ptr])")
-    :
-    : [ptr] "r"(UTM_BASE)
-    : "t0", "memory"
-  );
+  UTM_BASE[65] = 0xBABE; /* marker: after stop */
 
-  /* Store read-back values to UTM[32..63] */
+  /* Save current v registers (possibly corrupted by B) to UTM[32..63] */
   __asm__ __volatile__ (
     STORE_ALL("(%[ptr])")
     :
@@ -183,17 +161,15 @@ void _start(void) {
     : "t0", "memory"
   );
 
-  /* Print table */
-  sbi_putchar('\n');
+  /* Compare saved (UTM[0..31]) vs current (UTM[32..63]) */
+  int fail = 0;
   for (int i = 0; i < 32; i++) {
-    sbi_puts("  v"); sbi_puthex(i);
-    sbi_puts(" 0x"); sbi_puthex(UTM_BASE[i]);
-    sbi_puts(" 0x"); sbi_puthex(UTM_BASE[32 + i]);
     if (UTM_BASE[i] != UTM_BASE[32 + i])
-      sbi_puts(" MISMATCH");
-    sbi_putchar('\n');
+      fail = 1;
   }
 
-  sbi_puts("A: exiting\n");
+  /* Store result: 0 = FAIL (vectors corrupted = SM has no context switch) */
+  UTM_BASE[64] = fail ? 0 : 1;
+
   sbi_exit(0);
 }
