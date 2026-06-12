@@ -21,6 +21,7 @@
  /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/ed25519/ed25519.h \
  /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/hkdf_sha3_512/hkdf_sha3_512.h \
  /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/platform/nemu_xiangshan/platform.h \
+ /home/yangxin/xs-env/keystone/sm/plat/nemu_xiangshan/../../src/cpu.h \
  /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_console.h \
  /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_error.h \
  /home/yangxin/xs-env/keystone/sm/opensbi/include/sbi/sbi_ecall_interface.h \

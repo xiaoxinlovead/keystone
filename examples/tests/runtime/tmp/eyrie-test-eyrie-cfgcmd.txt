@@ -1,0 +1,1 @@
+cmd='/usr/bin/cmake;-DFREEMEM=ON;-DCMAKE_C_COMPILER=/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc;-DCMAKE_OBJCOPY=/opt/riscv/bin/riscv64-unknown-linux-gnu-objcopy;-DEYRIE_SRCDIR=/home/yangxin/xs-env/keystone/runtime;-GUnix Makefiles;<SOURCE_DIR><SOURCE_SUBDIR>'

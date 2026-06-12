@@ -1,8 +1,7 @@
 #!/bin/sh
-echo "Starting keystone hello enclave (loadElf)..."
-insmod /keystone/keystone-driver.ko 2>/dev/null || true
-MINOR=$(grep keystone_enclave /proc/misc 2>/dev/null | awk '{print $1}')
-if [ -n "$MINOR" ]; then
-  mknod /dev/keystone_enclave c 10 $MINOR 2>&1
-fi
-/keystone/hello-runner /keystone/hello /keystone/eyrie-rt
+mount -t proc proc /proc
+M=$(grep keystone_enclave /proc/misc | awk '{print $1}')
+mknod /dev/keystone_enclave c 10 $M
+echo "Starting keystone vec_ctx_test..."
+/root/keystone/vec_ctx_test-runner /root/keystone/vec_writer.pkg
+echo "=== vec_ctx_test done ==="

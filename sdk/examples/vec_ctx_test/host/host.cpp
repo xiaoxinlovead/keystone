@@ -29,17 +29,14 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  /* Read results from UTM */
   volatile uint64_t *utm = (volatile uint64_t *)enclave.getSharedBuffer();
-
-  fprintf(stderr, "\n=== Vector register test ===\n");
   int nfail = 0;
   for (int i = 0; i < 32; i++) {
     uint64_t expected = 0xDEAD000000000000ULL + i;
     if (utm[i] == expected) {
       fprintf(stderr, "  v%02d: 0x%016lx PASS\n", i, (unsigned long)utm[i]);
     } else if (utm[32 + i] == expected) {
-      fprintf(stderr, "  v%02d: 0x%016lx (from verify pass) PASS\n", i, (unsigned long)utm[32 + i]);
+      fprintf(stderr, "  v%02d: 0x%016lx (verify pass) PASS\n", i, (unsigned long)utm[32 + i]);
     } else {
       fprintf(stderr, "  v%02d: expected 0x%016lx, got 0x%016lx FAIL\n",
               i, (unsigned long)expected,
@@ -48,10 +45,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (nfail == 0) {
+  if (nfail == 0)
     fprintf(stderr, "\nRESULT: All 32 vector registers work correctly on NEMU\n");
-  } else {
+  else
     fprintf(stderr, "\nRESULT: %d failures\n", nfail);
-  }
   return 0;
 }

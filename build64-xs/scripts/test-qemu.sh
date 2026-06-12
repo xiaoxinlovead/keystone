@@ -14,12 +14,12 @@ upload_to_qemu() {
         SCP_OPTIONS+=" -O"
     fi
     echo "Uploading \"$(basename $1)\" to QEMU ..."
-    scp ${SSH_OPTIONS} ${SCP_OPTIONS} -P 4938 $1 root@localhost:.
+    scp ${SSH_OPTIONS} ${SCP_OPTIONS} -P 5033 $1 root@localhost:.
 }
 
 run_in_qemu() {
     echo "Running \"$1\" in QEMU ..."
-    ssh ${SSH_OPTIONS} -p 4938 root@localhost "$1"
+    ssh ${SSH_OPTIONS} -p 5033 root@localhost "$1"
 }
 
 run_in_qemu "insmod keystone-driver.ko"
@@ -28,7 +28,7 @@ upload_to_qemu "/home/yangxin/xs-env/keystone/build64-xs/examples/tests/tests.ke
 run_in_qemu "./tests.ke"
 
 upload_to_qemu "/home/yangxin/xs-env/keystone/build64-xs/examples/attestation/attestor.ke"
-upload_to_qemu "/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/generic/firmware/fw_jump.bin"
+upload_to_qemu "/home/yangxin/xs-env/keystone/build64-xs/sm.build/platform/nemu_xiangshan/firmware/fw_jump.bin"
 run_in_qemu "./attestor.ke"
 
 run_in_qemu "poweroff"

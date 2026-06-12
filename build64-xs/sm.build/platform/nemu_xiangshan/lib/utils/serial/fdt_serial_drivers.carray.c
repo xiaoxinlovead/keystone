@@ -4,8 +4,10 @@
 #include <sbi_utils/serial/fdt_serial.h>
 
 extern const struct fdt_driver fdt_serial_uart8250;
+extern const struct fdt_driver fdt_serial_xlnx_uartlite;
 
 const struct fdt_driver *const fdt_serial_drivers[] = {
 	&fdt_serial_uart8250,
+	&fdt_serial_xlnx_uartlite,
 	NULL
 };
