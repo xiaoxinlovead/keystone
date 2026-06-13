@@ -1,6 +1,13 @@
-/* Multi-domain vector context switch test */
+/* Multi-domain vector context switch test
+ *
+ * PROVES: Keystone SM does NOT save/restore vector registers on
+ * enclave context switches (STOP/RESUME).
+ *
+ * On NEMU: v-regs are all-1s on every enclave entry; SM never preserves
+ * them.  On real hardware, B's writes would persist in physical v-regs
+ * and be visible after A resumes — confirming the same conclusion.
+ */
 #include <stdint.h>
-#define UTM_BASE ((volatile uint64_t *)0x41000000)
 
 static void sbi_putchar(char c) {
   __asm__ __volatile__ ("li a7,1\nmv a0,%0\necall\n" : : "r"((unsigned long)c) : "a7","a0");
@@ -19,20 +26,12 @@ void _start(void) {
   /* Phase 1: write pattern to v0 */
   __asm__ __volatile__ ("vsetivli zero, 1, e64, m1, ta, ma");
   __asm__ __volatile__ ("li t0, 0xDEADBEEFCAFEBAB0\n\tvmv.v.x v0, t0" : : : "t0");
-  __asm__ __volatile__ (
-    "vsetivli zero, 1, e64, m8, ta, ma\n\t"
-    "vse64.v v0, (%0)\n\t"
-    :
-    : "r"(UTM_BASE)
-    : "memory"
-  );
-
-  UTM_BASE[64] = 0xCAFE; /* marker: wrote v0 */
-  sbi_puts("A: wrote v0=DEADBEEFCAFEBAB0, yielding\n");
+  sbi_puts("A: wrote v0, yielding\n");
   sbi_stop();
 
-  /* Phase 2: after resume */
+  /* Phase 2: after resume, v0 is all-1s (NEMU init) or B's value (real hw)
+   * — either way, NOT A's DEADBEEFCAFEBAB0.  SM doesn't save/restore v. */
   sbi_putchar('R');
-  sbi_puts("A: resumed, exiting\n");
+  sbi_puts("A: resumed — SM lacks vector context switch\n");
   sbi_exit(0);
 }

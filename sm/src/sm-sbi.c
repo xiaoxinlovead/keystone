@@ -45,6 +45,7 @@ unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long ei
 {
   unsigned long ret;
   ret = resume_enclave(regs, (unsigned int) eid);
+  regs->mepc += 4;
   if (!regs->zero)
     regs->a0 = ret;
 

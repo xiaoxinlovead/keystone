@@ -20,7 +20,7 @@ void swap_prev_mstatus(struct thread_state* thread, struct sbi_trap_regs* regs, 
   //Time interrupts can occur in either user mode or supervisor mode
   uintptr_t mstatus_mask = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP |
                             MSTATUS_MPP | MSTATUS_FS | MSTATUS_SUM |
-                            MSTATUS_MXR;
+                            MSTATUS_MXR | MSTATUS_VS;
 
   uintptr_t tmp = thread->prev_mstatus;
   thread->prev_mstatus = (current_mstatus & ~mstatus_mask) | (current_mstatus & mstatus_mask);
