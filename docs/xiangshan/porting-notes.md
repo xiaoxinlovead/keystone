@@ -410,3 +410,25 @@ index 302630e49..3495a508b 100644
 ```diff
 
 ```
+
+### Fix resume mepc not advancing past ecall
+
+**Files:** `sm/src/sm-sbi.c`
+**Date:** 2026-06-13 11:49
+
+**Reason:** sbi_sm_resume_enclave lacked regs->mepc += 4, causing runtime to re-execute ecall and loop infinitely
+
+```diff
+
+```
+
+### Preserve VS in mstatus across context switch
+
+**Files:** `sm/src/thread.c`
+**Date:** 2026-06-13 11:49
+
+**Reason:** Add MSTATUS_VS to swap_prev_mstatus mask so vector state survives STOP/RESUME
+
+```diff
+
+```
