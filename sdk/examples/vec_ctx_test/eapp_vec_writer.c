@@ -39,7 +39,6 @@ void _start(void) {
 
   /* Phase 2: read v0 after resume */
   sbi_putchar('R');
-
   uint64_t v0_val;
   __asm__ __volatile__ (
     "vsetivli zero, 1, e64, m1, ta, ma\n\t"
