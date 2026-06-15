@@ -47,8 +47,6 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
   swap_prev_mstatus(&enclaves[eid].threads[0], regs, regs->mstatus);
 
   uintptr_t interrupts = 0;
-  sbi_printf("[SM] medeleg(before)=0x%lx, mideleg(before)=0x%lx\n",
-             csr_read(medeleg), csr_read(mideleg));
   csr_write(mideleg, interrupts);
 
   /* Always set FS=3 (float dirty) and VS=3 (vector dirty) on every
@@ -106,71 +104,6 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
   // Setup any platform specific defenses
   platform_switch_to_enclave(&(enclaves[eid]));
 
-  /* Verify runtime binary is loaded */
-  {
-    uintptr_t rpa = enclaves[eid].pa_params.runtime_base;
-    volatile uint32_t *rp = (volatile uint32_t *)(uintptr_t)rpa;
-    sbi_printf("[SM] runtime PA=0x%lx: insns 0x%08x 0x%08x 0x%08x 0x%08x\n",
-               rpa, rp[0], rp[1], rp[2], rp[3]);
-  }
-
-  /* Debug: walk page table to verify runtime_entry is mapped */
-  {
-    uintptr_t satp_val = csr_read(satp);
-    uintptr_t root_ppn = satp_val & ((1UL << 44) - 1);
-    uintptr_t root_pa = root_ppn << RISCV_PGSHIFT;
-    uintptr_t va = (uintptr_t) enclaves[eid].params.runtime_entry;
-    int vpn[3];
-    vpn[2] = (va >> 30) & 0x1FF;
-    vpn[1] = (va >> 21) & 0x1FF;
-    vpn[0] = (va >> 12) & 0x1FF;
-
-    sbi_printf("[SM] PT walk: va=0x%lx root_pa=0x%lx vpn[2]=%d vpn[1]=%d vpn[0]=%d\n",
-               va, root_pa, vpn[2], vpn[1], vpn[0]);
-
-    volatile uint64_t *l2 = (volatile uint64_t *)(uintptr_t)root_pa;
-    uint64_t pte2 = l2[vpn[2]];
-    sbi_printf("[SM]   L2[%d] pte=0x%016lx (V=%d RWX=%d%d%d)\n",
-               vpn[2], pte2,
-               !!(pte2 & PTE_V), !!(pte2 & PTE_R), !!(pte2 & PTE_W), !!(pte2 & PTE_X));
-    if (!(pte2 & PTE_V)) {
-      sbi_printf("[SM] PT FAIL: L2 PTE[%d] invalid — page table not initialized for VA 0x%lx\n",
-                 vpn[2], va);
-      goto pt_done;
-    }
-
-    uintptr_t l1_pa = (pte2 >> PTE_PPN_SHIFT) << RISCV_PGSHIFT;
-    volatile uint64_t *l1 = (volatile uint64_t *)(uintptr_t)l1_pa;
-    uint64_t pte1 = l1[vpn[1]];
-    sbi_printf("[SM]   L1[%d] pte=0x%016lx pa=0x%lx (V=%d RWX=%d%d%d)\n",
-               vpn[1], pte1, l1_pa,
-               !!(pte1 & PTE_V), !!(pte1 & PTE_R), !!(pte1 & PTE_W), !!(pte1 & PTE_X));
-    if (!(pte1 & PTE_V)) {
-      sbi_printf("[SM] PT FAIL: L1 PTE[%d] invalid\n", vpn[1]);
-      goto pt_done;
-    }
-
-    uintptr_t l0_pa = (pte1 >> PTE_PPN_SHIFT) << RISCV_PGSHIFT;
-    volatile uint64_t *l0 = (volatile uint64_t *)(uintptr_t)l0_pa;
-    uint64_t pte0 = l0[vpn[0]];
-    sbi_printf("[SM]   L0[%d] pte=0x%016lx pa=0x%lx (V=%d RWX=%d%d%d)\n",
-               vpn[0], pte0, l0_pa,
-               !!(pte0 & PTE_V), !!(pte0 & PTE_R), !!(pte0 & PTE_W), !!(pte0 & PTE_X));
-    if (!(pte0 & PTE_V)) {
-      sbi_printf("[SM] PT FAIL: L0 PTE[%d] invalid\n", vpn[0]);
-      goto pt_done;
-    }
-
-    uintptr_t dest_pa = (pte0 >> PTE_PPN_SHIFT) << RISCV_PGSHIFT;
-    sbi_printf("[SM] PT OK: VA 0x%lx -> PA 0x%lx (offset=0x%lx)\n",
-               va, dest_pa, va & 0xFFF);
-  pt_done: ;
-  }
-
-  sbi_printf("[SM] entering enclave: eid=%d mepc=0x%lx satp=0x%lx mtvec=0x%lx\n",
-             eid, regs->mepc, csr_read(satp), csr_read(mtvec));
-  sbi_printf("[SM]   medeleg(final)=0x%lx, mideleg(final)=0x%lx\n",
-             csr_read(medeleg), csr_read(mideleg));
   cpu_enter_enclave_context(eid);
 }
 
@@ -597,11 +530,6 @@ unsigned long run_enclave(struct sbi_trap_regs *regs, enclave_id eid)
 {
   int runable;
 
-  sbi_printf("[SM] run_enclave: eid=%d runtime=0x%lx user=0x%lx from mepc=0x%lx\n",
-             eid, enclaves[eid].pa_params.runtime_base,
-             enclaves[eid].pa_params.user_base,
-             regs->mepc);
-
   spin_lock(&encl_lock);
   runable = (ENCLAVE_EXISTS(eid)
             && enclaves[eid].state == FRESH);
@@ -624,8 +552,6 @@ unsigned long run_enclave(struct sbi_trap_regs *regs, enclave_id eid)
 unsigned long exit_enclave(struct sbi_trap_regs *regs, enclave_id eid)
 {
   int exitable;
-
-  sbi_printf("[SM] exit_enclave: eid=%d\n", eid);
 
   spin_lock(&encl_lock);
   exitable = enclaves[eid].state == RUNNING;

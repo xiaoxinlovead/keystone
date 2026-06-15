@@ -76,7 +76,6 @@ static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long
 static int keystone_register_extensions(void)
 {
   int rc = sbi_ecall_register_extension(&ecall_keystone_enclave);
-  sbi_printf("[SM] register_extensions: rc=%d\n", rc);
   return rc;
 }
 
