@@ -64,6 +64,9 @@ struct csrs
 
 };
 
+/* 2 × uint64_t per register for VLEN=128 */
+#define VREG_SAVE_WORDS 2
+
 /* enclave thread state */
 struct thread_state
 {
@@ -72,6 +75,7 @@ struct thread_state
   uintptr_t prev_mstatus;
   struct csrs prev_csrs;
   struct ctx prev_state;
+  uint64_t prev_vreg[32][VREG_SAVE_WORDS];
 };
 
 /* swap previous and current thread states */
@@ -84,6 +88,14 @@ void switch_vector_enclave();
 void switch_vector_host();
 extern void trap_vector_enclave();
 extern void trap_vector();
+
+/* Vector context save/restore (for mstatus.VS != 0) */
+void save_vector_context(uint64_t (*vreg)[VREG_SAVE_WORDS]);
+void restore_vector_context(uint64_t (*vreg)[VREG_SAVE_WORDS]);
+
+/* Host ↔ enclave vector context switch */
+void switch_to_enclave_vector_context(struct thread_state* thread);
+void switch_to_host_vector_context(struct thread_state* thread);
 
 /* Clean state generation */
 void clean_state(struct thread_state* state);

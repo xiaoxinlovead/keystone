@@ -92,6 +92,9 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
 
   switch_vector_enclave();
 
+  /* Restore enclave vector context (save host vectors first) */
+  switch_to_enclave_vector_context(&enclaves[eid].threads[0]);
+
   // set PMP
   osm_pmp_set(PMP_NO_PERM);
   int memid;
@@ -122,6 +125,9 @@ static inline void context_switch_to_host(struct sbi_trap_regs *regs,
 
   uintptr_t interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
   csr_write(mideleg, interrupts);
+
+  /* Save enclave vector context (restore host vectors back) */
+  switch_to_host_vector_context(&enclaves[eid].threads[0]);
 
   /* restore host context */
   swap_prev_state(&enclaves[eid].threads[0], regs, return_on_resume);
