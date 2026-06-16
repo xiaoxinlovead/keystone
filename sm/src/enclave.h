@@ -28,6 +28,7 @@ typedef enum {
   ALLOCATED,
   FRESH,
   STOPPED,
+  EXITED,      /* sbi_exit was called — not resumable */
   RUNNING,
 } enclave_state;
 

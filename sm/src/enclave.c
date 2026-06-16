@@ -476,7 +476,8 @@ unsigned long destroy_enclave(enclave_id eid)
 
   spin_lock(&encl_lock);
   destroyable = (ENCLAVE_EXISTS(eid)
-                 && enclaves[eid].state <= STOPPED);
+                 && (enclaves[eid].state == STOPPED ||
+                     enclaves[eid].state == EXITED));
   /* update the enclave state first so that
    * no SM can run the enclave any longer */
   if(destroyable)
@@ -564,13 +565,10 @@ unsigned long exit_enclave(struct sbi_trap_regs *regs, enclave_id eid)
   if (exitable) {
     enclaves[eid].n_thread--;
     if(enclaves[eid].n_thread == 0)
-      enclaves[eid].state = STOPPED;
+      enclaves[eid].state = EXITED;
   } else {
-    /* Force-exit: set n_thread > MAX so resume_enclave refuses
-     * (n_thread < MAX_ENCL_THREADS check fails).  This prevents
-     * re-entering the enclave with a corrupted page table. */
-    enclaves[eid].n_thread = MAX_ENCL_THREADS;
-    enclaves[eid].state = STOPPED;
+    enclaves[eid].n_thread = 0;
+    enclaves[eid].state = EXITED;
   }
   spin_unlock(&encl_lock);
 
@@ -613,7 +611,7 @@ unsigned long resume_enclave(struct sbi_trap_regs *regs, enclave_id eid)
 
   spin_lock(&encl_lock);
   resumable = (ENCLAVE_EXISTS(eid)
-               && (enclaves[eid].state == RUNNING || enclaves[eid].state == STOPPED)
+               && enclaves[eid].state == STOPPED
                && enclaves[eid].n_thread < MAX_ENCL_THREADS);
 
   if(!resumable) {
