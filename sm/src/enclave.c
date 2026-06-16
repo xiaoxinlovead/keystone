@@ -45,6 +45,11 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
   swap_prev_state(&enclaves[eid].threads[0], regs, 1);
   swap_prev_mepc(&enclaves[eid].threads[0], regs, regs->mepc);
   swap_prev_mstatus(&enclaves[eid].threads[0], regs, regs->mstatus);
+  /* Advance saved host mepc past the ecall so context_switch_to_host
+   * returns to the instruction after ecall, NOT the ecall itself.
+   * Without this, every STOP/EXIT re-executes the host's SBI ecall
+   * (RUN/RESUME) with the enclave already in STOPPED/EXITED state. */
+  enclaves[eid].threads[0].prev_mepc += 4;
 
   uintptr_t interrupts = 0;
   csr_write(mideleg, interrupts);
