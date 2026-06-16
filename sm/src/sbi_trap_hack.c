@@ -151,7 +151,7 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
   		/* Bailout from runtime: ecall a7=1111 means fatal error.
   		 * sbi_ecall_handler may return success for this extension,
   		 * but we must exit the enclave to break the crash loop. */
-  		if (regs->a7 == 1111) {
+  		if (regs->a7 == 1111 && cpu_is_enclave_context()) {
   			sbi_sm_exit_enclave(regs, SBI_ERR_SM_ENCLAVE_NOT_RUNNING, &out);
   			return;
   		}

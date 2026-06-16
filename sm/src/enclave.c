@@ -570,10 +570,14 @@ unsigned long exit_enclave(struct sbi_trap_regs *regs, enclave_id eid)
   if (exitable) {
     enclaves[eid].n_thread--;
     if(enclaves[eid].n_thread == 0)
-      enclaves[eid].state = EXITED;
+      enclaves[eid].state = STOPPED;
   } else {
+    /* Force-exit: set prev_mepc to runtime_entry so any subsequent
+     * RESUME starts from the runtime boot, not the crash address. */
+    enclaves[eid].threads[0].prev_mepc =
+        (uintptr_t)enclaves[eid].params.runtime_entry;
     enclaves[eid].n_thread = 0;
-    enclaves[eid].state = EXITED;
+    enclaves[eid].state = STOPPED;
   }
   spin_unlock(&encl_lock);
 
