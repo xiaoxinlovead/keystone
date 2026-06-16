@@ -432,3 +432,36 @@ index 302630e49..3495a508b 100644
 ```diff
 
 ```
+
+### Add vector register save area to thread_state
+
+**Files:** `sm/src/thread.h`
+**Date:** 2026-06-15 18:42
+
+**Reason:** Store v0-v31 across enclave context switches
+
+```diff
+
+```
+
+### Add vector context save/restore functions
+
+**Files:** `sm/src/thread.c`
+**Date:** 2026-06-15 18:42
+
+**Reason:** save_vector_context/restore_vector_context using vse64.v/vle64.v with LMUL=m8
+
+```diff
+
+```
+
+### Call vector context switch during enclave entry/exit
+
+**Files:** `sm/src/enclave.c`
+**Date:** 2026-06-15 18:42
+
+**Reason:** switch_to_enclave_vector_context/switch_to_host_vector_context in context_switch_*
+
+```diff
+
+```
