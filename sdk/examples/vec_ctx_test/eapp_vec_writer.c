@@ -1,11 +1,10 @@
 /* Multi-domain vector context switch test
  *
- * PROVES: Keystone SM does NOT save/restore vector registers on
- * enclave context switches (STOP/RESUME).
+ * VERIFIES: Keystone SM vector context save/restore on context switch.
  *
- * On NEMU: v-regs are all-1s on every enclave entry; SM never preserves
- * them.  On real hardware, B's writes would persist in physical v-regs
- * and be visible after A resumes — confirming the same conclusion.
+ * A writes a pattern to v0, yields. B clobbers v0-v31 (vxor.vv), exits.
+ * Host resumes A. If SM saved/restored vector context, v0 holds A's
+ * original value. Otherwise v0 would hold B's or the host kernel's value.
  */
 #include <stdint.h>
 
@@ -51,10 +50,9 @@ void _start(void) {
   sbi_puts(" (expected 0xdeadbeefcafebab0) ");
 
   if (v0_val == 0xDEADBEEFCAFEBAB0UL)
-    sbi_puts("NO_CORRUPTION\n");
+    sbi_puts("NO_CORRUPTION (SM saves/restores vector context)\n");
   else
-    sbi_puts("CORRUPTED\n");
-  sbi_puts("SM lacks vector context switch\n");
+    sbi_puts("CORRUPTED (SM lacks vector context switch)\n");
 
   sbi_exit(0);
 }
