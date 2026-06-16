@@ -56,7 +56,13 @@ unsigned long sbi_sm_resume_enclave(struct sbi_trap_regs *regs, unsigned long ei
 unsigned long sbi_sm_exit_enclave(struct sbi_trap_regs *regs, unsigned long retval,
                                    struct sbi_ecall_return *out)
 {
-  regs->a0 = exit_enclave(regs, cpu_get_enclave_id());
+  unsigned long ret = exit_enclave(regs, cpu_get_enclave_id());
+  /* On error: skip ecall so runtime doesn't re-execute it in a loop.
+   * On success: exit_enclave called context_switch_to_host which already
+   * set regs->mepc to the host's return address — do NOT add 4. */
+  if (ret)
+    regs->mepc += 4;
+  regs->a0 = ret;
   regs->a1 = retval;
   out->skip_regs_update = true;
   return 0;
