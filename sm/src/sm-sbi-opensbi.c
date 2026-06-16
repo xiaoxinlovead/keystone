@@ -28,7 +28,12 @@ static int sbi_ecall_keystone_enclave_handler(unsigned long extid, unsigned long
   }
   else if (funcid <= FID_RANGE_ENCLAVE)
   {
-    if (!cpu_is_enclave_context())
+    /* EXIT must work even without enclave context — the runtime calls
+     * sbi_exit_enclave from page-fault handlers after the SM already
+     * cleared the context.  Denying it traps the runtime in a loop. */
+    if (!cpu_is_enclave_context() &&
+        funcid != SBI_SM_EXIT_ENCLAVE &&
+        funcid != SBI_SM_STOP_ENCLAVE)
       return SBI_ERR_SM_ENCLAVE_SBI_PROHIBITED;
   }
 
