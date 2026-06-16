@@ -6,6 +6,29 @@
 #include <sbi/sbi_console.h>
 #include "thread.h"
 
+/* Host vector register save area (save/restore around enclave entry) */
+static uint64_t host_vreg[32][VREG_SAVE_WORDS] __attribute__((aligned(128)));
+
+/* Called when entering enclave: save host vectors, restore enclave vectors */
+void switch_to_enclave_vector_context(struct thread_state* thread) {
+  unsigned long old_mie = csr_read(mstatus) & MSTATUS_MIE;
+  csr_clear(mstatus, MSTATUS_MIE);
+  csr_set(mstatus, MSTATUS_VS);
+  save_vector_context(host_vreg);
+  restore_vector_context(thread->prev_vreg);
+  if (old_mie) csr_set(mstatus, MSTATUS_MIE);
+}
+
+/* Called when exiting enclave: save enclave vectors, restore host vectors */
+void switch_to_host_vector_context(struct thread_state* thread) {
+  unsigned long old_mie = csr_read(mstatus) & MSTATUS_MIE;
+  csr_clear(mstatus, MSTATUS_MIE);
+  csr_set(mstatus, MSTATUS_VS);
+  save_vector_context(thread->prev_vreg);
+  restore_vector_context(host_vreg);
+  if (old_mie) csr_set(mstatus, MSTATUS_MIE);
+}
+
 void switch_vector_enclave(){
   extern void trap_vector_enclave();
   csr_write(mtvec, &trap_vector_enclave);
@@ -87,6 +110,55 @@ void swap_prev_mepc(struct thread_state* thread, struct sbi_trap_regs* regs, uin
 }
 
 
+/* Save v0-v31 to the given save area (512 bytes).
+ * Caller must have set csr_set(mstatus, MSTATUS_VS) before calling. */
+void save_vector_context(uint64_t (*vreg)[VREG_SAVE_WORDS]) {
+  uint64_t *b = (uint64_t *)vreg;
+  __asm__ volatile (
+    ".option arch, +v\n"
+    "li t0, 16\n"
+    "vsetvli zero, t0, e64, m8, ta, ma\n"
+    "addi t1, %[b], 128\n"
+    "addi t2, %[b], 256\n"
+    "addi t3, %[b], 384\n"
+    "vse64.v v0, (%[b])\n"
+    "vse64.v v8, (t1)\n"
+    "vse64.v v16, (t2)\n"
+    "vse64.v v24, (t3)\n"
+    :
+    : [b] "r"(b)
+    : "t0", "t1", "t2", "t3", "memory"
+  );
+}
+
+/* Restore v0-v31 from the given save area (512 bytes).
+ * Caller must have set csr_set(mstatus, MSTATUS_VS) before calling. */
+void restore_vector_context(uint64_t (*vreg)[VREG_SAVE_WORDS]) {
+  uint64_t *b = (uint64_t *)vreg;
+  __asm__ volatile (
+    ".option arch, +v\n"
+    "li t0, 16\n"
+    "vsetvli zero, t0, e64, m8, ta, ma\n"
+    "addi t1, %[b], 128\n"
+    "addi t2, %[b], 256\n"
+    "addi t3, %[b], 384\n"
+    "vle64.v v0, (%[b])\n"
+    "vle64.v v8, (t1)\n"
+    "vle64.v v16, (t2)\n"
+    "vle64.v v24, (t3)\n"
+    :
+    : [b] "r"(b)
+    : "t0", "t1", "t2", "t3", "memory"
+  );
+}
+
+void clean_vector_state(struct thread_state* state) {
+  int r, w;
+  for (r = 0; r < 32; r++)
+    for (w = 0; w < VREG_SAVE_WORDS; w++)
+      state->prev_vreg[r][w] = 0;
+}
+
 void clean_state(struct thread_state* state){
   int i;
   uintptr_t* prev = (uintptr_t*) &state->prev_state;
@@ -97,6 +169,7 @@ void clean_state(struct thread_state* state){
 
   state->prev_mpp = -1; // 0x800;
   clean_smode_csrs(state);
+  clean_vector_state(state);
 }
 
 void clean_smode_csrs(struct thread_state* state){

@@ -142,13 +142,20 @@ void sbi_trap_handler_keystone_enclave(struct sbi_trap_regs *regs)
 		msg = "misaligned store handler failed";
 		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
 		break;
- 	case CAUSE_USER_ECALL:
- 	case CAUSE_SUPERVISOR_ECALL:
- 	case CAUSE_MACHINE_ECALL:
- 		rc  = sbi_ecall_handler(&tcntx);
- 		msg = "ecall handler failed";
- 		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
- 		break;
+  	case CAUSE_USER_ECALL:
+  	case CAUSE_SUPERVISOR_ECALL:
+  	case CAUSE_MACHINE_ECALL:
+  		rc  = sbi_ecall_handler(&tcntx);
+  		msg = "ecall handler failed";
+  		sbi_memcpy(regs, &tcntx.regs, sizeof(*regs));
+  		/* Bailout from runtime: ecall a7=1111 means fatal error.
+  		 * sbi_ecall_handler may return success for this extension,
+  		 * but we must exit the enclave to break the crash loop. */
+  		if (regs->a7 == 1111) {
+  			sbi_sm_exit_enclave(regs, SBI_ERR_SM_ENCLAVE_NOT_RUNNING, &out);
+  			return;
+  		}
+  		break;
 	default:
 		/* If the trap came from S or U mode, redirect it there.
 		 * But if stvec is 0 (enclave hasn't set up its trap handler yet),

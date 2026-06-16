@@ -45,6 +45,11 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
   swap_prev_state(&enclaves[eid].threads[0], regs, 1);
   swap_prev_mepc(&enclaves[eid].threads[0], regs, regs->mepc);
   swap_prev_mstatus(&enclaves[eid].threads[0], regs, regs->mstatus);
+  /* Advance saved host mepc past the ecall so context_switch_to_host
+   * returns to the instruction after ecall, NOT the ecall itself.
+   * Without this, every STOP/EXIT re-executes the host's SBI ecall
+   * (RUN/RESUME) with the enclave already in STOPPED/EXITED state. */
+  enclaves[eid].threads[0].prev_mepc += 4;
 
   uintptr_t interrupts = 0;
   csr_write(mideleg, interrupts);
@@ -92,6 +97,9 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
 
   switch_vector_enclave();
 
+  /* Restore enclave vector context (save host vectors first) */
+  switch_to_enclave_vector_context(&enclaves[eid].threads[0]);
+
   // set PMP
   osm_pmp_set(PMP_NO_PERM);
   int memid;
@@ -122,6 +130,9 @@ static inline void context_switch_to_host(struct sbi_trap_regs *regs,
 
   uintptr_t interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
   csr_write(mideleg, interrupts);
+
+  /* Save enclave vector context (restore host vectors back) */
+  switch_to_host_vector_context(&enclaves[eid].threads[0]);
 
   /* restore host context */
   swap_prev_state(&enclaves[eid].threads[0], regs, return_on_resume);
@@ -470,7 +481,8 @@ unsigned long destroy_enclave(enclave_id eid)
 
   spin_lock(&encl_lock);
   destroyable = (ENCLAVE_EXISTS(eid)
-                 && enclaves[eid].state <= STOPPED);
+                 && (enclaves[eid].state == STOPPED ||
+                     enclaves[eid].state == EXITED));
   /* update the enclave state first so that
    * no SM can run the enclave any longer */
   if(destroyable)
@@ -558,16 +570,16 @@ unsigned long exit_enclave(struct sbi_trap_regs *regs, enclave_id eid)
   if (exitable) {
     enclaves[eid].n_thread--;
     if(enclaves[eid].n_thread == 0)
-      enclaves[eid].state = STOPPED;
+      enclaves[eid].state = EXITED;
+  } else {
+    enclaves[eid].n_thread = 0;
+    enclaves[eid].state = EXITED;
   }
   spin_unlock(&encl_lock);
 
-  if(!exitable)
-    return SBI_ERR_SM_ENCLAVE_NOT_RUNNING;
-
   context_switch_to_host(regs, eid, 0);
 
-  return SBI_ERR_SM_ENCLAVE_SUCCESS;
+  return 0;
 }
 
 unsigned long stop_enclave(struct sbi_trap_regs *regs, uint64_t request, enclave_id eid)
@@ -604,7 +616,7 @@ unsigned long resume_enclave(struct sbi_trap_regs *regs, enclave_id eid)
 
   spin_lock(&encl_lock);
   resumable = (ENCLAVE_EXISTS(eid)
-               && (enclaves[eid].state == RUNNING || enclaves[eid].state == STOPPED)
+               && enclaves[eid].state == STOPPED
                && enclaves[eid].n_thread < MAX_ENCL_THREADS);
 
   if(!resumable) {
