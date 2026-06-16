@@ -11,18 +11,22 @@ static uint64_t host_vreg[32][VREG_SAVE_WORDS] __attribute__((aligned(128)));
 
 /* Called when entering enclave: save host vectors, restore enclave vectors */
 void switch_to_enclave_vector_context(struct thread_state* thread) {
+  unsigned long old_mie = csr_read(mstatus) & MSTATUS_MIE;
+  csr_clear(mstatus, MSTATUS_MIE);
   csr_set(mstatus, MSTATUS_VS);
   save_vector_context(host_vreg);
   restore_vector_context(thread->prev_vreg);
-  /* Leave VS=3 so enclave can use vectors (regs->mstatus already has VS=3) */
+  if (old_mie) csr_set(mstatus, MSTATUS_MIE);
 }
 
 /* Called when exiting enclave: save enclave vectors, restore host vectors */
 void switch_to_host_vector_context(struct thread_state* thread) {
+  unsigned long old_mie = csr_read(mstatus) & MSTATUS_MIE;
+  csr_clear(mstatus, MSTATUS_MIE);
   csr_set(mstatus, MSTATUS_VS);
   save_vector_context(thread->prev_vreg);
   restore_vector_context(host_vreg);
-  /* mret will restore regs->mstatus (host's VS) — leave VS=3 for now */
+  if (old_mie) csr_set(mstatus, MSTATUS_MIE);
 }
 
 void switch_vector_enclave(){
