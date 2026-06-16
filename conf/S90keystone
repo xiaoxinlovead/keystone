@@ -2,6 +2,6 @@
 mount -t proc proc /proc
 M=$(grep keystone_enclave /proc/misc | awk '{print $1}')
 mknod /dev/keystone_enclave c 10 $M
-echo "Starting keystone vec_ctx_test..."
-/root/keystone/vec_ctx_test-runner /root/keystone/vec_writer.pkg /root/keystone/vec_trash.pkg
-echo "=== vec_ctx_test done ==="
+echo "Starting keystone ara_test..."
+/root/keystone/ara_test_context-runner /root/keystone/ara_test_both.pkg
+echo "=== ara_test done ==="
