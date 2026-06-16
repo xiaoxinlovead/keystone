@@ -465,3 +465,80 @@ index 302630e49..3495a508b 100644
 ```diff
 
 ```
+
+### Add vector register save area to thread_state
+
+**Files:** `sm/src/thread.h`
+**Date:** 2026-06-16 17:12
+
+**Reason:** Store v0-v31 across enclave context switches (prev_vreg[32][2])
+
+```diff
+
+```
+
+### Add vector save/restore + host_vreg + inline asm fix
+
+**Files:** `sm/src/thread.c`
+**Date:** 2026-06-16 17:12
+
+**Reason:** save/restore_vector_context using vse64.v/vle64.v LMUL=m8; host_vreg global; inline asm uses proper %[b] input operand
+
+```diff
+
+```
+
+### Add EXITED state + host prev_mepc+=4 + vector switch calls
+
+**Files:** `sm/src/enclave.c`
+**Date:** 2026-06-16 17:12
+
+**Reason:** EXITED prevents RESUME after sbi_exit; prev_mepc+=4 fixes host ecall re-execution; switch_to_enclave/host_vector_context in context_switch
+
+```diff
+
+```
+
+### Fix exit/resume mepc handling
+
+**Files:** `sm/src/sm-sbi.c`
+**Date:** 2026-06-16 17:12
+
+**Reason:** sbi_sm_resume_enclave/sbi_sm_exit_enclave: regs->mepc+=4 added for proper ecall skip
+
+```diff
+
+```
+
+### Handle runtime fatal bailout (ecall a7=1111)
+
+**Files:** `sm/src/sbi_trap_hack.c`
+**Date:** 2026-06-16 17:12
+
+**Reason:** Detect a7=1111 ecalls from enclave and exit via sbi_sm_exit_enclave to break crash loop
+
+```diff
+
+```
+
+### Allow EXIT/STOP without enclave context
+
+**Files:** `sm/src/sm-sbi-opensbi.c`
+**Date:** 2026-06-16 17:12
+
+**Reason:** Runtime page-fault handler calls sbi_exit_enclave after SM already cleared context
+
+```diff
+
+```
+
+### Fix initramfs UID/GID to squash
+
+**Files:** `CMakeLists.txt`
+**Date:** 2026-06-16 17:12
+
+**Reason:** CONFIG_INITRAMFS_ROOT_UID/GID=squash so all initramfs files are owned by root
+
+```diff
+
+```
