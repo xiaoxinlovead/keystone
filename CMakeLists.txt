@@ -236,7 +236,7 @@ if(initramfs)
    add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot}/.extracted ${linux_srcdir} "linux-symvers"
     COMMAND $(MAKE) -C ${linux_srcdir}
       O=${linux_wrkdir} "CONFIG_INITRAMFS_SOURCE=${confdir}/initramfs.txt ${initramfs_sysroot}"
-      CONFIG_INITRAMFS_ROOT_UID=0 CONFIG_INITRAMFS_ROOT_GID=0
+      CONFIG_INITRAMFS_ROOT_UID="squash" CONFIG_INITRAMFS_ROOT_GID="squash"
       CONFIG_DEVTMPFS=y CONFIG_DEVTMPFS_MOUNT=y
       CROSS_COMPILE=${cross_compile} ARCH=riscv
     COMMENT "Building linux (initramfs)"
