@@ -198,3 +198,46 @@ Write to a page table entry, then read it back — NEMU may return stale data. F
 ## Code format
 
 SDK and runtime each have `.clang-format` and `make format` target (SDK also runs cpplint).
+
+## Build-test cycle for enclave changes
+
+The cmake `sm` target depends on `attestor-package` which fails on Xiangshan (expects `generic` platform). Workaround: build firmware manually.
+
+```bash
+source ./source.sh
+
+# Build enclave pkg + runner
+cmake --build build64-xs --target <name>-pkg
+
+# Copy to initramfs directly (not overlay — cmake buildroot fails)
+cp build64-xs/examples/<name>/<name>-runner build64-xs/initramfs-sysroot/root/keystone/
+cp build64-xs/examples/<name>/enclave.pkg build64-xs/initramfs-sysroot/root/keystone/
+
+# Rebuild linux kernel (embeds initramfs)
+make -C linux O=build64-xs/linux.build \
+  CONFIG_INITRAMFS_SOURCE="conf/initramfs.txt build64-xs/initramfs-sysroot" \
+  CONFIG_INITRAMFS_ROOT_UID="squash" CONFIG_INITRAMFS_ROOT_GID="squash" \
+  CONFIG_DEVTMPFS=y CONFIG_DEVTMPFS_MOUNT=y \
+  CROSS_COMPILE=riscv64-unknown-linux-gnu- ARCH=riscv
+
+# Rebuild OpenSBI firmware
+make -C sm/opensbi O=build64-xs/sm.build \
+  PLATFORM_DIR=sm/plat/nemu_xiangshan \
+  CROSS_COMPILE=riscv64-unknown-linux-gnu- \
+  FW_PAYLOAD_PATH=build64-xs/linux.build/arch/riscv/boot/Image \
+  FW_PAYLOAD=y PLATFORM_RISCV_XLEN=64 \
+  PLATFORM_RISCV_ISA=rv64imafdc_zifencei PLATFORM_RISCV_ABI=lp64d \
+  FW_FDT_PATH=/home/yangxin/xiangshan-opensbi-linuxkernel/nemu_board/dts/build/xiangshan.dtb \
+  FW_PAYLOAD_ALIGN=0x200000 FW_PAYLOAD_FDT_OFFSET=0x3000000
+
+# Test
+timeout 180 /home/yangxin/xs-env/NEMU-2026.03.r3/build/riscv64-nemu-interpreter \
+  -b -I 5000000000 \
+  build64-xs/sm.build/platform/nemu_xiangshan/firmware/fw_payload.bin 2>&1
+```
+
+**Key gotchas for creating new enclaves:**
+- Host runner MUST use `params.setUntrustedMem(0x41000000, ...)`. Default `DEFAULT_UNTRUSTED_PTR` (`0xffffffff80000000`) is in the kernel's direct-map region which the enclave page table can't access.
+- `enclave.pkg` is a SEPARATE cmake target. Always run `<name>-pkg`.
+- For new examples: add `add_subdirectory(<name>)` in `sdk/examples/CMakeLists.txt` and copy commands in top-level `CMakeLists.txt` `image-deps` target.
+- After changing initramfs files, must rebuild BOTH linux AND opensbi.

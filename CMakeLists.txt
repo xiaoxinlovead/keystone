@@ -231,12 +231,13 @@ if(initramfs)
     COMMAND sed -i '/^::sysinit:\/etc\/init.d\/rcS$/i ::sysinit:\/bin\/mount -t devtmpfs devtmpfs \/dev' ${initramfs_sysroot}/etc/inittab
     COMMAND cp ${CMAKE_SOURCE_DIR}/conf/S90keystone ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
     COMMAND chmod +x ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
+    COMMAND chmod 755 ${initramfs_sysroot}/bin/busybox 2>/dev/null || true
     COMMAND touch ${initramfs_sysroot}/.extracted
   )
    add_custom_command(OUTPUT ${linux_image} DEPENDS ${initramfs_sysroot}/.extracted ${linux_srcdir} "linux-symvers"
     COMMAND $(MAKE) -C ${linux_srcdir}
       O=${linux_wrkdir} "CONFIG_INITRAMFS_SOURCE=${confdir}/initramfs.txt ${initramfs_sysroot}"
-      CONFIG_INITRAMFS_ROOT_UID="squash" CONFIG_INITRAMFS_ROOT_GID="squash"
+      CONFIG_INITRAMFS_ROOT_UID=0 CONFIG_INITRAMFS_ROOT_GID=0
       CONFIG_DEVTMPFS=y CONFIG_DEVTMPFS_MOUNT=y
       CROSS_COMPILE=${cross_compile} ARCH=riscv
     COMMENT "Building linux (initramfs)"

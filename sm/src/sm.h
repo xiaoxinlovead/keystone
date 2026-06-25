@@ -95,6 +95,7 @@ struct runtime_pa_params
   uintptr_t runtime_base;
   uintptr_t user_base;
   uintptr_t free_base;
+  uintptr_t utm_paddr;   /* physical address of UTM (for runtime __va) */
 };
 
 struct keystone_sbi_create

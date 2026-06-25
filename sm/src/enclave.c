@@ -79,8 +79,8 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
     regs->a4 = (uintptr_t) enclaves[eid].pa_params.user_base;
     // $a5: (PA) freemem location,
     regs->a5 = (uintptr_t) enclaves[eid].pa_params.free_base;
-    // $a6: (VA) utm base,
-    regs->a6 = (uintptr_t) enclaves[eid].params.untrusted_ptr;
+    // $a6: (VA) utm base, kernel direct-map VA = PAGE_OFFSET | paddr,
+    regs->a6 = (uintptr_t)(0xffffffff80000000ull | enclaves[eid].pa_params.utm_paddr);
     // $a7: (size_t) utm size
     regs->a7 = (uintptr_t) enclaves[eid].params.untrusted_size;
 
@@ -391,6 +391,7 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   pa_params.runtime_base = create_args.runtime_paddr;
   pa_params.user_base = create_args.user_paddr;
   pa_params.free_base = create_args.free_paddr;
+  pa_params.utm_paddr = utbase;
 
 
   // allocate eid
