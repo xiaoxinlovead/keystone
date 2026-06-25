@@ -237,6 +237,7 @@ timeout 180 /home/yangxin/xs-env/NEMU-2026.03.r3/build/riscv64-nemu-interpreter 
 ```
 
 **Key gotchas for creating new enclaves:**
+- **Enclave runtime page fault? First check for `#include <stdio.h>`.** libc's `printf` accesses uninitialized FILE structs (stdout/stderr) in enclave context (no C runtime init with `-nostartfiles`). This causes NULL deref → page fault delegated to S-mode via medeleg → runtime's `rt_page_fault` calls `sbi_exit_enclave` → SM doesn't handle a7=1101 properly → runtime accesses `shared_buffer` → secondary fault. Fix: replace `<stdio.h>` with `"printf.h"` from `common/` (which provides a bare-metal `printf` via `#define printf printf_`), and include `serial.c` for `_putchar` (direct ecall a7=1).
 - Host runner MUST use `params.setUntrustedMem(0x41000000, ...)`. Default `DEFAULT_UNTRUSTED_PTR` (`0xffffffff80000000`) is in the kernel's direct-map region which the enclave page table can't access.
 - `enclave.pkg` is a SEPARATE cmake target. Always run `<name>-pkg`.
 - For new examples: add `add_subdirectory(<name>)` in `sdk/examples/CMakeLists.txt` and copy commands in top-level `CMakeLists.txt` `image-deps` target.
