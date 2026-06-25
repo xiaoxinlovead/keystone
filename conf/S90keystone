@@ -4,7 +4,7 @@ mount -t devtmpfs devtmpfs /dev 2>&-
 mount -t sysfs sysfs /sys 2>&-
 MINOR=$(grep keystone_enclave /proc/misc 2>&- | awk '{print $1}')
 [ -n "$MINOR" ] && mknod /dev/keystone_enclave c 10 $MINOR 2>&-
-echo "========== mldoctor (enclave) =========="
-/root/keystone/mldoctor-runner /root/keystone/enclave.pkg 2>&-
+echo "========== ara_test_keystone (old enclave) =========="
+/root/keystone/ara_test_keystone-runner /root/keystone/enclave.pkg 2>&-
 echo ""
 echo "========== all tests done =========="

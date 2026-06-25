@@ -3,7 +3,7 @@
 
 #include <inttypes.h>
 #include <stdint.h>
-#include <stdio.h>
+#include "printf.h"
 
 static inline void mld_result_begin(const char *attack_id, const char *family,
                                     const char *evidence_level, const char *status) {

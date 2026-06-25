@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
   Enclave enclave;
   Params params;
   params.setFreeMemSize(256 * 1024);
-  params.setUntrustedMem(0x8f000000, 4096);
+  params.setUntrustedMem(DEFAULT_UNTRUSTED_PTR, 4096);
 
   Error err = enclave.init(argv[1], argv[1], params);
   if (err != Error::Success) {

@@ -2,8 +2,8 @@
 
 #include <inttypes.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
+#include "printf.h"
 
 #define CLASS_COUNT 5u
 #define MAX_PER_CLASS 64u
@@ -12,9 +12,6 @@
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
-static const char *class_names[CLASS_COUNT] = {
-    "daisy", "dandelion", "roses", "sunflowers", "tulips",
-};
 
 static float input_data[IMAGE_SIZE * IMAGE_SIZE] __attribute__((aligned(64)));
 static float feature_data[IMAGE_SIZE * IMAGE_SIZE] __attribute__((aligned(64)));
@@ -180,9 +177,10 @@ static void run_label_window(const char *split, uint32_t sequence,
     run_sample(label, sequence);
     uint64_t end = read_time();
     sample_end_marker(label, sequence);
-    printf("[STEALTHY_SAMPLE] sample_id=%s-%05u label=%s split=%s "
+    printf("[STEALTHY_SAMPLE] sample_id=%s-%05u label=%u split=%s "
            "start_cycle=%" PRIu64 " end_cycle=%" PRIu64 "\n",
-           split, sequence, class_names[label], split, start, end);
+           split, sequence, label,
+           split, start, end);
   } else {
     run_sample(label, sequence);
     sample_end_marker(label, sequence);

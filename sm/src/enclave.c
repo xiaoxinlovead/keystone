@@ -79,8 +79,8 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
     regs->a4 = (uintptr_t) enclaves[eid].pa_params.user_base;
     // $a5: (PA) freemem location,
     regs->a5 = (uintptr_t) enclaves[eid].pa_params.free_base;
-    // $a6: (VA) utm base, kernel direct-map VA = PAGE_OFFSET | paddr,
-    regs->a6 = (uintptr_t)(0xffffffff80000000ull | enclaves[eid].pa_params.utm_paddr);
+    // $a6: (VA) utm base,
+    regs->a6 = (uintptr_t) enclaves[eid].params.untrusted_ptr;
     // $a7: (size_t) utm size
     regs->a7 = (uintptr_t) enclaves[eid].params.untrusted_size;
 
