@@ -391,7 +391,6 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   pa_params.runtime_base = create_args.runtime_paddr;
   pa_params.user_base = create_args.user_paddr;
   pa_params.free_base = create_args.free_paddr;
-  pa_params.utm_paddr = utbase;
 
 
   // allocate eid
