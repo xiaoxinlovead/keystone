@@ -6,3 +6,6 @@
 	path = sm/opensbi
 	url = git@github.com:xiaoxinlovead/opensbi.git
 	branch = hellovector
+[submodule "sdk/examples/llama.cpp"]
+	path = sdk/examples/llama.cpp
+	url = https://github.com/xiaoxinlovead/llama.cpp.git
