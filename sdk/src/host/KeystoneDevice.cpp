@@ -131,6 +131,11 @@ KeystoneDevice::map(uintptr_t addr, size_t size) {
   return ret;
 }
 
+void
+KeystoneDevice::unmap(void* addr, size_t size) {
+  munmap(addr, size);
+}
+
 bool
 KeystoneDevice::initDevice(Params params) {
   /* open device driver */
@@ -184,6 +189,12 @@ void*
 MockKeystoneDevice::map(uintptr_t addr, size_t size) {
   sharedBuffer = malloc(size);
   return sharedBuffer;
+}
+
+void
+MockKeystoneDevice::unmap(void* addr, size_t size) {
+  (void)size;
+  free(addr);
 }
 
 MockKeystoneDevice::~MockKeystoneDevice() {

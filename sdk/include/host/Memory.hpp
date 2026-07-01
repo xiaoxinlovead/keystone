@@ -129,13 +129,16 @@ class Memory {
 
 class PhysicalEnclaveMemory : public Memory {
  public:
-  PhysicalEnclaveMemory() {}
+  PhysicalEnclaveMemory() : batch_base(~0UL), batch_vaddr(0) {}
   ~PhysicalEnclaveMemory() {}
   void init(KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages);
   uintptr_t readMem(uintptr_t src, size_t size);
   void writeMem(uintptr_t src, uintptr_t dst, size_t size);
   uintptr_t allocMem(size_t size);
   uintptr_t allocUtm(size_t size);
+ private:
+  uintptr_t batch_base;
+  uintptr_t batch_vaddr;
 };
 
 // Simulated memory reads/writes from calloc'ed memory

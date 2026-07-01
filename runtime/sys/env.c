@@ -23,7 +23,7 @@
  *******/
 
 // How many AUX things are we actually defining? Add one for terminator
-#define AUXV_COUNT 13
+#define AUXV_COUNT 15
 
 // Size in number-of-words (argc, argv, null_env, auxv, randombytes
 #define SIZE_OF_SETUP (1+1+1+(2*AUXV_COUNT) + 2)
@@ -88,8 +88,12 @@ void* setup_start(void* _sp, ELF(Ehdr) *hdr) {
     if(phdr[h].p_type == PT_LOAD && phdr[h].p_offset == 0) {
       auxv[i++] = AT_PHDR;
       auxv[i++] = phdr[h].p_vaddr + hdr->e_phoff;
+      auxv[i++] = AT_PHENT;
+      auxv[i++] = hdr->e_phentsize;
       auxv[i++] = AT_PHNUM;
       auxv[i++] = hdr->e_phnum;
+      auxv[i++] = AT_ENTRY;
+      auxv[i++] = hdr->e_entry;
       break;
     }
   }

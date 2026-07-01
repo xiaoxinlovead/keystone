@@ -53,6 +53,10 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
 
   uintptr_t interrupts = 0;
   csr_write(mideleg, interrupts);
+  /* Keep ecalls in M-mode so legacy SBI (putchar) reaches SM directly.
+   * Linux syscalls from __tls_init_tp (set_robust_list, getcpu) will
+   * return -1 (ENOSYS) but glibc tolerates that. */
+  csr_write(medeleg, 0);
 
   /* Always set FS=3 (float dirty) and VS=3 (vector dirty) on every
    * enclave entry (both first run and resume), so vector instructions
@@ -309,47 +313,52 @@ static int is_create_args_valid(struct keystone_sbi_create* args)
 {
   uintptr_t epm_start, epm_end;
 
-  /* printm("[create args info]: \r\n\tepm_addr: %llx\r\n\tepmsize: %llx\r\n\tutm_addr: %llx\r\n\tutmsize: %llx\r\n\truntime_addr: %llx\r\n\tuser_addr: %llx\r\n\tfree_addr: %llx\r\n", */
-  /*        args->epm_region.paddr, */
-  /*        args->epm_region.size, */
-  /*        args->utm_region.paddr, */
-  /*        args->utm_region.size, */
-  /*        args->runtime_paddr, */
-  /*        args->user_paddr, */
-  /*        args->free_paddr); */
+  sbi_printf("[create] epm=0x%lx size=0x%lx utm=0x%lx utm_sz=0x%lx rt=0x%lx user=0x%lx free=0x%lx\n",
+    (unsigned long)args->epm_region.paddr, (unsigned long)args->epm_region.size,
+    (unsigned long)args->utm_region.paddr, (unsigned long)args->utm_region.size,
+    (unsigned long)args->runtime_paddr, (unsigned long)args->user_paddr,
+    (unsigned long)args->free_paddr);
 
-  // check if physical addresses are valid
-  if (args->epm_region.size <= 0)
+  if (args->epm_region.size <= 0) {
+    sbi_printf("[create] FAIL: epm size <= 0\n");
     return 0;
+  }
 
-  // check if overflow
-  if (args->epm_region.paddr >=
-      args->epm_region.paddr + args->epm_region.size)
+  if (args->epm_region.paddr >= args->epm_region.paddr + args->epm_region.size) {
+    sbi_printf("[create] FAIL: epm overflow\n");
     return 0;
-  if (args->utm_region.paddr >=
-      args->utm_region.paddr + args->utm_region.size)
+  }
+  if (args->utm_region.paddr >= args->utm_region.paddr + args->utm_region.size) {
+    sbi_printf("[create] FAIL: utm overflow\n");
     return 0;
+  }
 
   epm_start = args->epm_region.paddr;
   epm_end = args->epm_region.paddr + args->epm_region.size;
 
-  // check if physical addresses are in the range
-  if (args->runtime_paddr < epm_start ||
-      args->runtime_paddr >= epm_end)
+  if (args->runtime_paddr < epm_start || args->runtime_paddr >= epm_end) {
+    sbi_printf("[create] FAIL: runtime_paddr out of range (start=0x%lx end=0x%lx)\n",
+      (unsigned long)epm_start, (unsigned long)epm_end);
     return 0;
-  if (args->user_paddr < epm_start ||
-      args->user_paddr >= epm_end)
+  }
+  if (args->user_paddr < epm_start || args->user_paddr >= epm_end) {
+    sbi_printf("[create] FAIL: user_paddr out of range\n");
     return 0;
-  if (args->free_paddr < epm_start ||
-      args->free_paddr > epm_end)
-      // note: free_paddr == epm_end if there's no free memory
+  }
+  if (args->free_paddr < epm_start || args->free_paddr > epm_end) {
+    sbi_printf("[create] FAIL: free_paddr out of range (got 0x%lx, end=0x%lx)\n",
+      (unsigned long)args->free_paddr, (unsigned long)epm_end);
     return 0;
+  }
 
-  // check the order of physical addresses
-  if (args->runtime_paddr > args->user_paddr)
+  if (args->runtime_paddr > args->user_paddr) {
+    sbi_printf("[create] FAIL: runtime_paddr > user_paddr\n");
     return 0;
-  if (args->user_paddr > args->free_paddr)
+  }
+  if (args->user_paddr > args->free_paddr) {
+    sbi_printf("[create] FAIL: user_paddr > free_paddr\n");
     return 0;
+  }
 
   return 1;
 }
@@ -380,8 +389,10 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   int region, shared_region;
 
   /* Runtime parameters */
-  if(!is_create_args_valid(&create_args))
+  if(!is_create_args_valid(&create_args)) {
+    sbi_printf("[create] FAIL: is_create_args_valid\n");
     return SBI_ERR_SM_ENCLAVE_ILLEGAL_ARGUMENT;
+  }
 
   /* set va params */
   struct runtime_va_params_t params = create_args.params;
@@ -443,6 +454,7 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
   /* Validate memory, prepare hash and signature for attestation */
   spin_lock(&encl_lock); // FIXME This should error for second enter.
   ret = validate_and_hash_enclave(&enclaves[eid]);
+  sbi_printf("[create] validate_and_hash_enclave returned %ld\n", (long)ret);
   /* The enclave is fresh if it has been validated and hashed but not run yet. */
   if (ret)
     goto unlock;

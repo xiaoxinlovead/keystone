@@ -227,6 +227,7 @@ if(initramfs)
   add_custom_command(OUTPUT ${initramfs_sysroot}/.extracted
     DEPENDS ${initramfs_sysroot} ${buildroot_wrkdir}/images/rootfs.tar
     COMMAND tar -xpf ${buildroot_wrkdir}/images/rootfs.tar -C ${initramfs_sysroot} --exclude ./dev --exclude ./usr/share/locale
+    COMMAND chmod u-s ${initramfs_sysroot}/bin/busybox
   COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/fix-inittab.sh ${initramfs_sysroot}/etc/inittab
     COMMAND sed -i '/^::sysinit:\/etc\/init.d\/rcS$/i ::sysinit:\/bin\/mount -t devtmpfs devtmpfs \/dev' ${initramfs_sysroot}/etc/inittab
     COMMAND cp ${CMAKE_SOURCE_DIR}/conf/S90keystone ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
@@ -278,7 +279,7 @@ add_custom_target("driver" ALL DEPENDS ${driver_srcdir} ${linux_srcdir} "linux-s
 add_custom_target("sm" ALL DEPENDS "linux" "buildroot" ${sm_wrkdir_exists} WORKING_DIRECTORY ${sm_wrkdir}
   COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/${platform}
   CROSS_COMPILE=${cross_compile} FW_PAYLOAD_PATH=${linux_image} FW_PAYLOAD=y PLATFORM_RISCV_XLEN=${BITS}
-   PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000 FW_PAYLOAD_FDT_OFFSET=0x3000000
+   PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000 FW_PAYLOAD_FDT_OFFSET=0x4000000
   COMMAND ln -sf fw_payload.bin platform/${platform}/firmware/fw_jump.bin
   COMMAND ln -sf fw_payload.elf platform/${platform}/firmware/fw_jump.elf
   COMMENT "Building sm"
@@ -320,6 +321,8 @@ add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_writer.pkg ${overlay_root}/keystone/ 2>/dev/null || true
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_trash.pkg ${overlay_root}/keystone/ 2>/dev/null || true
   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_ctx_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/enclave.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/tls_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
 )
 add_custom_target("image" DEPENDS "buildroot" "sm"
   COMMENT "Generating image"

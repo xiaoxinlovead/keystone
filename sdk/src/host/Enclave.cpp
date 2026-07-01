@@ -19,6 +19,11 @@ namespace Keystone {
 Enclave::Enclave() {
   runtimeFile = NULL;
   enclaveFile = NULL;
+  pDevice = NULL;
+  pMemory = NULL;
+  oFuncDispatch = NULL;
+  shared_buffer = NULL;
+  shared_buffer_size = 0;
 }
 
 Enclave::~Enclave() {
@@ -416,14 +421,25 @@ Enclave::init(
   }
 
   if (use_flat) {
-    /* Flat package: calculate required pages from file size */
-    struct stat st;
-    if (stat(eapppath, &st) != 0) {
-      destroy();
-      return Error::FileInitFailure;
+    /* Flat package: read FEP header to get total page count (including BSS) */
+    FILE *fp = fopen(eapppath, "rb");
+    if (!fp) { destroy(); return Error::FileInitFailure; }
+    FepHeader hdr;
+    if (fread(&hdr, sizeof(hdr), 1, fp) != 1 || !fep_header_valid(&hdr)) {
+      fclose(fp); destroy(); return Error::FileInitFailure;
     }
-    uintptr_t minPages = (st.st_size / PAGE_SIZE) + 15
-                         + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE;
+    uintptr_t total_va_pages = 0;
+    for (uint32_t i = 0; i < hdr.num_segs; i++) {
+      FepSegment seg;
+      if (fread(&seg, sizeof(seg), 1, fp) != 1) {
+        fclose(fp); destroy(); return Error::FileInitFailure;
+      }
+      total_va_pages += seg.va_pages;
+    }
+    fclose(fp);
+    uintptr_t minPages = total_va_pages
+                         + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
+                         + 65536; /* 256 MB extra for runtime safety */
     if (pDevice->create(minPages) != Error::Success) {
       destroy();
       return Error::DeviceError;
@@ -571,6 +587,7 @@ Enclave::destroy() {
     runtimeFile = NULL;
   }
 
+  if (!pDevice) return Error::Success;
   return pDevice->destroy();
 }
 

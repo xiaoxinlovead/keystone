@@ -432,3 +432,430 @@ index 302630e49..3495a508b 100644
 ```diff
 
 ```
+
+### Expose program header auxv entries for TLS
+
+**Files:** `runtime/sys/env.c`
+**Date:** 2026-07-01 13:14
+
+**Reason:** glibc __libc_setup_tls needs AT_PHDR, AT_PHENT, AT_PHNUM, and AT_ENTRY to discover PT_TLS inside the enclave
+
+```diff
+diff --git a/runtime/sys/env.c b/runtime/sys/env.c
+index a39669707..363ea6ac7 100644
+--- a/runtime/sys/env.c
++++ b/runtime/sys/env.c
+@@ -23,7 +23,7 @@
+  *******/
+ 
+ // How many AUX things are we actually defining? Add one for terminator
+-#define AUXV_COUNT 13
++#define AUXV_COUNT 15
+ 
+ // Size in number-of-words (argc, argv, null_env, auxv, randombytes
+ #define SIZE_OF_SETUP (1+1+1+(2*AUXV_COUNT) + 2)
+@@ -88,8 +88,12 @@ void* setup_start(void* _sp, ELF(Ehdr) *hdr) {
+     if(phdr[h].p_type == PT_LOAD && phdr[h].p_offset == 0) {
+       auxv[i++] = AT_PHDR;
+       auxv[i++] = phdr[h].p_vaddr + hdr->e_phoff;
++      auxv[i++] = AT_PHENT;
++      auxv[i++] = hdr->e_phentsize;
+       auxv[i++] = AT_PHNUM;
+       auxv[i++] = hdr->e_phnum;
++      auxv[i++] = AT_ENTRY;
++      auxv[i++] = hdr->e_entry;
+       break;
+     }
+   }
+
+```
+
+### Enable IO syscall proxy for TLS printf test
+
+**Files:** `sdk/examples/tls_test/CMakeLists.txt`
+**Date:** 2026-07-01 13:14
+
+**Reason:** glibc printf emits SYS_write, which requires the Eyrie io_syscall wrapper to reach the host console
+
+```diff
+
+```
+
+### Initialize glibc aux state before TLS setup
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:14
+
+**Reason:** The -nostartfiles TLS test bypasses libc startup, so it must call _dl_aux_init before __libc_setup_tls and verify printf with a TLS variable
+
+```diff
+
+```
+
+### Use explicit RV64 auxv type in TLS test
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:14
+
+**Reason:** The RISC-V glibc headers in this build do not expose ElfW in the test compile mode, so _dl_aux_init uses Elf64_auxv_t directly
+
+```diff
+
+```
+
+### Copy TLS test into initramfs overlay
+
+**Files:** `CMakeLists.txt`
+**Date:** 2026-07-01 13:15
+
+**Reason:** S90keystone runs tls_test-runner with enclave.pkg, so image-deps must install the current TLS artifacts into /root/keystone
+
+```diff
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 87f4bef2f..5189eb5c1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -320,6 +320,8 @@ add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_writer.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_trash.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_ctx_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
++  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/enclave.pkg ${overlay_root}/keystone/ 2>/dev/null || true
++  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/tls_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
+ )
+ add_custom_target("image" DEPENDS "buildroot" "sm"
+   COMMENT "Generating image"
+
+```
+
+### Keep initramfs BusyBox from dropping init privileges
+
+**Files:** `CMakeLists.txt`
+**Date:** 2026-07-01 13:32
+
+**Reason:** The rootfs tar is extracted by an unprivileged user and preserves BusyBox setuid mode with uid 1000 ownership; clearing setuid keeps PID 1 running as root so proc/devtmpfs mounts and keystone device creation work
+
+```diff
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 87f4bef2f..94af2881f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -227,6 +227,7 @@ if(initramfs)
+   add_custom_command(OUTPUT ${initramfs_sysroot}/.extracted
+     DEPENDS ${initramfs_sysroot} ${buildroot_wrkdir}/images/rootfs.tar
+     COMMAND tar -xpf ${buildroot_wrkdir}/images/rootfs.tar -C ${initramfs_sysroot} --exclude ./dev --exclude ./usr/share/locale
++    COMMAND chmod u-s ${initramfs_sysroot}/bin/busybox
+   COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/fix-inittab.sh ${initramfs_sysroot}/etc/inittab
+     COMMAND sed -i '/^::sysinit:\/etc\/init.d\/rcS$/i ::sysinit:\/bin\/mount -t devtmpfs devtmpfs \/dev' ${initramfs_sysroot}/etc/inittab
+     COMMAND cp ${CMAKE_SOURCE_DIR}/conf/S90keystone ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
+@@ -320,6 +321,8 @@ add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_writer.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_trash.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_ctx_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
++  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/enclave.pkg ${overlay_root}/keystone/ 2>/dev/null || true
++  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/tls_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
+ )
+ add_custom_target("image" DEPENDS "buildroot" "sm"
+   COMMENT "Generating image"
+
+```
+
+### Move XS payload FDT past larger initramfs kernel
+
+**Files:** `CMakeLists.txt`
+**Date:** 2026-07-01 13:35
+
+**Reason:** The TLS-enabled initramfs grew the Linux Image past 0x83000000, so FW_PAYLOAD_FDT_OFFSET=0x3000000 overlapped the kernel; use 0x4000000 to match nemu_xiangshan config.mk and pass an intact DTB
+
+```diff
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 87f4bef2f..77ef7a3ae 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -227,6 +227,7 @@ if(initramfs)
+   add_custom_command(OUTPUT ${initramfs_sysroot}/.extracted
+     DEPENDS ${initramfs_sysroot} ${buildroot_wrkdir}/images/rootfs.tar
+     COMMAND tar -xpf ${buildroot_wrkdir}/images/rootfs.tar -C ${initramfs_sysroot} --exclude ./dev --exclude ./usr/share/locale
++    COMMAND chmod u-s ${initramfs_sysroot}/bin/busybox
+   COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/fix-inittab.sh ${initramfs_sysroot}/etc/inittab
+     COMMAND sed -i '/^::sysinit:\/etc\/init.d\/rcS$/i ::sysinit:\/bin\/mount -t devtmpfs devtmpfs \/dev' ${initramfs_sysroot}/etc/inittab
+     COMMAND cp ${CMAKE_SOURCE_DIR}/conf/S90keystone ${initramfs_sysroot}/etc/init.d/S90keystone 2>/dev/null || true
+@@ -278,7 +279,7 @@ add_custom_target("driver" ALL DEPENDS ${driver_srcdir} ${linux_srcdir} "linux-s
+ add_custom_target("sm" ALL DEPENDS "linux" "buildroot" ${sm_wrkdir_exists} WORKING_DIRECTORY ${sm_wrkdir}
+   COMMAND $(MAKE) -C ${sm_srcdir}/opensbi O=${sm_wrkdir} PLATFORM_DIR=${sm_srcdir}/plat/${platform}
+   CROSS_COMPILE=${cross_compile} FW_PAYLOAD_PATH=${linux_image} FW_PAYLOAD=y PLATFORM_RISCV_XLEN=${BITS}
+-   PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000 FW_PAYLOAD_FDT_OFFSET=0x3000000
++   PLATFORM_RISCV_ISA=${ISA} PLATFORM_RISCV_ABI=${ABI} FW_FDT_PATH=${xs_fdt} FW_PAYLOAD_ALIGN=0x200000 FW_PAYLOAD_FDT_OFFSET=0x4000000
+   COMMAND ln -sf fw_payload.bin platform/${platform}/firmware/fw_jump.bin
+   COMMAND ln -sf fw_payload.elf platform/${platform}/firmware/fw_jump.elf
+   COMMENT "Building sm"
+@@ -320,6 +321,8 @@ add_custom_target("image-deps" DEPENDS "driver" "tests" ${overlay_root}
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_writer.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_trash.pkg ${overlay_root}/keystone/ 2>/dev/null || true
+   COMMAND cp ${CMAKE_BINARY_DIR}/examples/vec_ctx_test/vec_ctx_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
++  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/enclave.pkg ${overlay_root}/keystone/ 2>/dev/null || true
++  COMMAND cp ${CMAKE_BINARY_DIR}/examples/tls_test/tls_test-runner ${overlay_root}/keystone/ 2>/dev/null || true
+ )
+ add_custom_target("image" DEPENDS "buildroot" "sm"
+   COMMENT "Generating image"
+
+```
+
+### Copy old root table after installing load alias
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-01 13:41
+
+**Reason:** The saved-root-page-table loop read EYRIE_LOAD_START before map_physical_memory made that alias valid, causing an early runtime load page fault before __libc_setup_tls; install the new table, execute sfence.vma, then copy through the valid alias
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 5f35614f0..62926050c 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -138,23 +138,14 @@ eyrie_boot(uintptr_t dummy, // $a0 contains the return value from the SBI
+   /* remap kernel VA */
+   remap_kernel_space(runtime_paddr, user_paddr - runtime_paddr);
+ 
+-  /* Save old root PTEs before map_physical_memory overwrites them */
+-  pte saved_root_pt[512];
+-  pte* old_root = (pte*)EYRIE_LOAD_START;
+-  for (int i = 0; i < 512; i++) saved_root_pt[i] = old_root[i];
+-
+   map_physical_memory(dram_base, dram_size);
+ 
+   /* switch to the new page table */
+   csr_write(satp, satp_new(kernel_va_to_pa(root_page_table)));
++  asm volatile("sfence.vma" ::: "memory");
+ 
+-  /* copy valid entries from the saved old page table */
+-  for (int i = 0; i < 512; i++) {
+-    if (saved_root_pt[i] & PTE_V &&
+-        !(root_page_table[i] & PTE_V)) {
+-      root_page_table[i] = saved_root_pt[i];
+-    }
+-  }
++  /* copy valid entries from the old page table */
++  copy_root_page_table();
+ 
+   /* initialize free memory */
+   init_freemem();
+
+```
+
+### Use portable inline assembly spelling for sfence
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-01 13:41
+
+**Reason:** The runtime C dialect rejects plain asm, so the TLB fence added before copying the old root table must use __asm__
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 5f35614f0..80f84ecef 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -138,23 +138,14 @@ eyrie_boot(uintptr_t dummy, // $a0 contains the return value from the SBI
+   /* remap kernel VA */
+   remap_kernel_space(runtime_paddr, user_paddr - runtime_paddr);
+ 
+-  /* Save old root PTEs before map_physical_memory overwrites them */
+-  pte saved_root_pt[512];
+-  pte* old_root = (pte*)EYRIE_LOAD_START;
+-  for (int i = 0; i < 512; i++) saved_root_pt[i] = old_root[i];
+-
+   map_physical_memory(dram_base, dram_size);
+ 
+   /* switch to the new page table */
+   csr_write(satp, satp_new(kernel_va_to_pa(root_page_table)));
++  __asm__ volatile("sfence.vma" ::: "memory");
+ 
+-  /* copy valid entries from the saved old page table */
+-  for (int i = 0; i < 512; i++) {
+-    if (saved_root_pt[i] & PTE_V &&
+-        !(root_page_table[i] & PTE_V)) {
+-      root_page_table[i] = saved_root_pt[i];
+-    }
+-  }
++  /* copy valid entries from the old page table */
++  copy_root_page_table();
+ 
+   /* initialize free memory */
+   init_freemem();
+
+```
+
+### Repackage TLS enclave when runtime changes
+
+**Files:** `sdk/examples/tls_test/CMakeLists.txt`
+**Date:** 2026-07-01 13:42
+
+**Reason:** The flat enclave package embeds eyrie-rt, so the package command must depend on the runtime output file as well as the external runtime target
+
+```diff
+
+```
+
+### Run libc static initialization before printf
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:49
+
+**Reason:** After __libc_setup_tls succeeds, glibc stdio and malloc still require the non-dynamic libc initialization normally done by startup code; call __libc_init_first before entering main
+
+```diff
+
+```
+
+### Initialize ptmalloc before stdio allocation
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:52
+
+**Reason:** glibc printf enters malloc, and bypassing normal startup leaves main_arena uninitialized unless __ptmalloc_init runs after TLS and libc static initialization
+
+```diff
+
+```
+
+### Keep enclave sbrk state synchronized
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:55
+
+**Reason:** glibc malloc relies on a page-aligned program break and the __curbrk global tracking every successful __sbrk movement; stale __curbrk corrupts malloc arena setup before printf
+
+```diff
+
+```
+
+### Provide enclave-local malloc for printf
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:58
+
+**Reason:** glibc ptmalloc arena initialization still faults in the enclave startup path; printf only needs simple allocation, so provide malloc/calloc/free/realloc aliases backed by the enclave sbrk heap
+
+```diff
+
+```
+
+### Use wrapper allocator symbols instead of aliases
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 13:58
+
+**Reason:** The RISC-V glibc headers attach allocator attributes that make alias declarations fail under -Werror, so expose libc allocator entry points as normal wrappers
+
+```diff
+
+```
+
+### Skip ptmalloc init when using enclave allocator
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:02
+
+**Reason:** The TLS test now supplies malloc entry points backed by the enclave heap, so running glibc ptmalloc initialization is unnecessary and leads into glibc exit handling
+
+```diff
+
+```
+
+### Route libc exit through Keystone ecall
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:06
+
+**Reason:** glibc _exit uses Linux syscall 94 and falls into ebreak if it returns; enclave termination must use the Keystone runtime exit ecall
+
+```diff
+
+```
+
+### Add raw enclave TLS phase markers
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:08
+
+**Reason:** Direct SBI console markers identify whether execution reaches auxv setup, TLS setup, libc init, and printf without relying on glibc stdio or proxied write
+
+```diff
+
+```
+
+### Avoid glibc first init after enclave TLS setup
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:10
+
+**Reason:** __libc_setup_tls returns in the enclave, but __libc_init_first stalls before main; the TLS printf smoke test uses enclave-local allocation and can enter main directly after TLS setup
+
+```diff
+
+```
+
+### Enable Linux syscall wrappers for TLS printf
+
+**Files:** `sdk/examples/tls_test/CMakeLists.txt`
+**Date:** 2026-07-01 14:12
+
+**Reason:** Static glibc printf and startup helpers may issue Linux-style syscalls such as brk, mmap, clock_gettime, or getrandom; the TLS test runtime should match the libc-oriented examples
+
+```diff
+
+```
+
+### Mark TLS variable access before printf
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:12
+
+**Reason:** Additional raw console markers show whether __thread storage works before glibc stdio formatting begins
+
+```diff
+
+```
+
+### Retry glibc first init with Linux syscall support
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:13
+
+**Reason:** After enabling linux_syscall wrappers, __libc_init_first can be tested again to initialize glibc stdio state needed for printf output
+
+```diff
+
+```
+
+### Exit TLS test through runtime Linux syscall
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:16
+
+**Reason:** With linux_syscall enabled, using SYS_exit exercises the runtime exit wrapper and makes returned exits visible with a raw console marker
+
+```diff
+
+```
+
+### Route glibc writes to enclave console
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:16
+
+**Reason:** Static glibc printf reaches __libc_write, but normal fd-backed writes are not initialized in the custom enclave entry path; stdout and stderr should emit through the proven SBI console path
+
+```diff
+
+```
+
+### Mark TLS printf smoke test success
+
+**Files:** `sdk/examples/tls_test/eapp/main.c`
+**Date:** 2026-07-01 14:18
+
+**Reason:** The NEMU harness keys on SUCCESS, so the glibc printf line should explicitly report successful TLS-backed formatting
+
+```diff
+
+```

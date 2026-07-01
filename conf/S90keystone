@@ -1,7 +1,10 @@
 #!/bin/sh
-mount -t proc proc /proc
-M=$(grep keystone_enclave /proc/misc | awk '{print $1}')
-mknod /dev/keystone_enclave c 10 $M
-echo "Starting keystone ara_test..."
-/root/keystone/ara_test_context-runner /root/keystone/ara_test_both.pkg
-echo "=== ara_test done ==="
+mount -t proc proc /proc 2>&-
+mount -t devtmpfs devtmpfs /dev 2>&-
+mount -t sysfs sysfs /sys 2>&-
+MINOR=$(grep keystone_enclave /proc/misc 2>&- | awk '{print $1}')
+[ -n "$MINOR" ] && mknod /dev/keystone_enclave c 10 $MINOR 2>&-
+echo "========== TLS test =========="
+/root/keystone/tls_test-runner /root/keystone/enclave.pkg 2>&1
+echo ""
+echo "========== all tests done =========="

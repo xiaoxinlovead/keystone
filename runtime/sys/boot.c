@@ -137,10 +137,12 @@ eyrie_boot(uintptr_t dummy, // $a0 contains the return value from the SBI
 
   /* remap kernel VA */
   remap_kernel_space(runtime_paddr, user_paddr - runtime_paddr);
+
   map_physical_memory(dram_base, dram_size);
 
   /* switch to the new page table */
   csr_write(satp, satp_new(kernel_va_to_pa(root_page_table)));
+  __asm__ volatile("sfence.vma" ::: "memory");
 
   /* copy valid entries from the old page table */
   copy_root_page_table();
