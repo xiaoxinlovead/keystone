@@ -22,6 +22,8 @@ uintptr_t paging_evict_and_free_one(uintptr_t swap_va);
 extern uintptr_t paging_pa_start;
 extern pte paging_l2_page_table[BIT(RISCV_PT_INDEX_BITS)]
     __attribute__((aligned(RISCV_PAGE_SIZE)));
+extern pte paging_l1_page_table[BIT(RISCV_PT_INDEX_BITS)]
+    __attribute__((aligned(RISCV_PAGE_SIZE)));
 extern pte paging_l3_page_table[BIT(RISCV_PT_INDEX_BITS)]
     __attribute__((aligned(RISCV_PAGE_SIZE)));
 

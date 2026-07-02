@@ -1,4 +1,5 @@
 #include "edge_syscall.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -22,8 +23,6 @@ incoming_syscall(struct edge_call* edge_call) {
   edge_call->return_data.call_status = CALL_STATUS_OK;
 
   int64_t ret;
-  int is_str_ret = 0; 
-  char* retbuf;
 
   // Right now we only handle some io syscalls. See runtime for how
   // others are handled.
@@ -33,6 +32,9 @@ incoming_syscall(struct edge_call* edge_call) {
       ret                           = openat(
           openat_args->dirfd, openat_args->path, openat_args->flags,
           openat_args->mode);
+      printf("[host-syscall] openat(dirfd=%d,path=%s,flags=0x%x,mode=%o) => %ld errno=%d\n",
+             openat_args->dirfd, openat_args->path, openat_args->flags,
+             openat_args->mode, (long) ret, ret < 0 ? errno : 0);
       break;
     case (SYS_unlinkat):;
       sargs_SYS_unlinkat* unlinkat_args =
@@ -51,17 +53,22 @@ incoming_syscall(struct edge_call* edge_call) {
       ret = fstatat(
           fstatat_args->dirfd, fstatat_args->pathname, &fstatat_args->stats,
           fstatat_args->flags);
-			break;
+      printf("[host-syscall] fstatat(dirfd=%d,path=%s,flags=0x%x) => %ld errno=%d\n",
+             fstatat_args->dirfd, fstatat_args->pathname, fstatat_args->flags,
+             (long) ret, ret < 0 ? errno : 0);
+      break;
     case (SYS_fstat):; 
       sargs_SYS_fstat* fstat_args = (sargs_SYS_fstat*)syscall_info->data;
       // Note the use of the implicit buffer in the stat args object (stats)
 			ret = fstat(fstat_args->fd, &fstat_args->stats);
 			break;
-    case (SYS_getcwd):;  // TODO: how to handle string return 
+    case (SYS_getcwd):;
       sargs_SYS_getcwd* getcwd_args = (sargs_SYS_getcwd*)syscall_info->data;
-			retbuf = getcwd(getcwd_args->buf, getcwd_args->size);
-      is_str_ret = 1;
-			break;
+      ret = getcwd(getcwd_args->buf, getcwd_args->size) ? 0 : -errno;
+      printf("[host-syscall] getcwd(size=%zu) => %ld cwd=%s errno=%d\n",
+             getcwd_args->size, (long) ret,
+             ret == 0 ? getcwd_args->buf : "<null>", ret < 0 ? errno : 0);
+      break;
     case (SYS_write):;
       sargs_SYS_write* write_args = (sargs_SYS_write*)syscall_info->data;
       ret = write(write_args->fd, write_args->buf, write_args->len);
@@ -96,8 +103,10 @@ incoming_syscall(struct edge_call* edge_call) {
       break;
     case(SYS_chdir):;
       sargs_SYS_chdir* chdir_args = (sargs_SYS_chdir*) syscall_info->data;
-			ret = chdir(chdir_args->path);
-			break;
+      ret = chdir(chdir_args->path);
+      printf("[host-syscall] chdir(path=%s) => %ld errno=%d\n",
+             chdir_args->path, (long) ret, ret < 0 ? errno : 0);
+      break;
     case (SYS_epoll_ctl):;
       sargs_SYS_epoll_ctl *epoll_ctl_args = (sargs_SYS_epoll_ctl *) syscall_info->data;
       ret = epoll_ctl(epoll_ctl_args->epfd, epoll_ctl_args->op, epoll_ctl_args->fd, (struct epoll_event * ) &epoll_ctl_args->event);
@@ -195,15 +204,13 @@ incoming_syscall(struct edge_call* edge_call) {
 
   /* Setup return value */
   void* ret_data_ptr      = (void*)edge_call_data_ptr();
-  if (is_str_ret) {
-    *(char**) ret_data_ptr = retbuf; // TODO: check ptr stuff
-    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
-      goto syscall_error;
-  } else {
-    *(int64_t*)ret_data_ptr = ret;
-    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
-      goto syscall_error;
+  if (ret < 0 && errno != 0 && ret == -1) {
+    ret = -errno;
   }
+
+  *(int64_t*)ret_data_ptr = ret;
+  if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
+    goto syscall_error;
 
   return;
 

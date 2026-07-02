@@ -50,7 +50,7 @@ typedef struct {
 #define VA_BITS 32
 #define RISCV_PGLEVEL_BITS 10
 #else  // __riscv_xlen == 64 or x86 test
-#define VA_BITS 39
+#define VA_BITS 48
 #define RISCV_PGLEVEL_BITS 9
 #endif
 
@@ -70,7 +70,7 @@ typedef struct {
 class Memory {
  public:
   Memory();
-  ~Memory() {}
+  virtual ~Memory() {}
   virtual void init(
       KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages)  = 0;
   virtual uintptr_t readMem(uintptr_t src, size_t size)            = 0;
@@ -129,16 +129,15 @@ class Memory {
 
 class PhysicalEnclaveMemory : public Memory {
  public:
-  PhysicalEnclaveMemory() : batch_base(~0UL), batch_vaddr(0) {}
-  ~PhysicalEnclaveMemory() {}
+  PhysicalEnclaveMemory() : epmMappedBase(0) {}
+  ~PhysicalEnclaveMemory();
   void init(KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages);
   uintptr_t readMem(uintptr_t src, size_t size);
   void writeMem(uintptr_t src, uintptr_t dst, size_t size);
   uintptr_t allocMem(size_t size);
   uintptr_t allocUtm(size_t size);
  private:
-  uintptr_t batch_base;
-  uintptr_t batch_vaddr;
+  uintptr_t epmMappedBase;
 };
 
 // Simulated memory reads/writes from calloc'ed memory

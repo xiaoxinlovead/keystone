@@ -1897,3 +1897,5677 @@ index 77ef7a3ae..e5d42407a 100644
 ```diff
 
 ```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/include/mm/vm_defs.h`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/include/mm/vm_defs.h b/runtime/include/mm/vm_defs.h
+index 1e6710f6e..2aa97c5b9 100644
+--- a/runtime/include/mm/vm_defs.h
++++ b/runtime/include/mm/vm_defs.h
+@@ -6,7 +6,7 @@
+ 
+ #if __riscv_xlen == 64
+ #define RISCV_PT_INDEX_BITS 9
+-#define RISCV_PT_LEVELS 3
++#define RISCV_PT_LEVELS 4
+ #elif __riscv_xlen == 32
+ #define RISCV_PT_INDEX_BITS 10
+ #define RISCV_PT_LEVELS 2
+@@ -33,16 +33,20 @@
+ /* Starting address of the enclave memory */
+ 
+ #if __riscv_xlen == 64
+-#define EYRIE_LOAD_START 0xffffffff00000000
+-#define EYRIE_PAGING_START 0xffffffff40000000
+-#define EYRIE_UNTRUSTED_START 0xffffffff80000000
++#define EYRIE_LOAD_SIZE_MAX 0x0000008000000000
++#define EYRIE_LOAD_START 0xfffffe0000000000
++#define EYRIE_PAGING_START (EYRIE_LOAD_START + EYRIE_LOAD_SIZE_MAX)
++#define EYRIE_UNTRUSTED_START (EYRIE_PAGING_START + EYRIE_LOAD_SIZE_MAX)
++#define EYRIE_RUNTIME_START 0xffffffffc0000000
+ #define EYRIE_USER_STACK_START 0x0000000040000000
+ #define EYRIE_ANON_REGION_START \
+   0x0000002000000000  // Arbitrary VA to start looking for large mappings
+ #elif __riscv_xlen == 32
++#define EYRIE_LOAD_SIZE_MAX 0x10000000
+ #define EYRIE_LOAD_START 0xf0000000
+ #define EYRIE_PAGING_START 0x40000000
+ #define EYRIE_UNTRUSTED_START 0x80000000
++#define EYRIE_RUNTIME_START 0xc0000000
+ #define EYRIE_USER_STACK_START 0x40000000
+ #define EYRIE_ANON_REGION_START \
+   0x20000000  // Arbitrary VA to start looking for large mappings
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/include/mm/vm.h`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/include/mm/vm.h b/runtime/include/mm/vm.h
+index 684b96e6a..8f424625d 100644
+--- a/runtime/include/mm/vm.h
++++ b/runtime/include/mm/vm.h
+@@ -13,7 +13,7 @@ extern uintptr_t runtime_va_start;
+ extern uintptr_t kernel_offset;
+ extern uintptr_t load_pa_start;
+ 
+-/* Eyrie is for Sv39 */
++/* Eyrie uses Sv48 on 64-bit targets for a larger enclave load window. */
+ static inline uintptr_t satp_new(uintptr_t pa)
+ {
+   return (SATP_MODE | (pa >> RISCV_PAGE_BITS));
+@@ -68,10 +68,12 @@ static inline uintptr_t pte_ppn(pte pte)
+ /* root page table */
+ extern pte root_page_table[];
+ /* page tables for kernel remap */
++extern pte kernel_l1_page_table[];
+ extern pte kernel_l2_page_table[];
+ extern pte kernel_l3_page_table[];
+ /* page tables for loading physical memory */
+-extern pte load_l2_page_table[];
++extern pte load_l1_page_table[];
++extern pte load_l2_page_tables[][BIT(RISCV_PT_INDEX_BITS)];
+ extern pte load_l3_page_table[];
+ 
+ /* Program break */
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/tmplib/asm/csr.h`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/tmplib/asm/csr.h b/runtime/tmplib/asm/csr.h
+index 421fa3585..ed81aacb3 100644
+--- a/runtime/tmplib/asm/csr.h
++++ b/runtime/tmplib/asm/csr.h
+@@ -48,7 +48,8 @@
+ #else
+ #define SATP_PPN     _AC(0x00000FFFFFFFFFFF, UL)
+ #define SATP_MODE_39 _AC(0x8000000000000000, UL)
+-#define SATP_MODE    SATP_MODE_39
++#define SATP_MODE_48 _AC(0x9000000000000000, UL)
++#define SATP_MODE    SATP_MODE_48
+ #endif
+ 
+ /* Interrupt Enable and Interrupt Pending flags */
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/mm/vm.c`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/mm/vm.c b/runtime/mm/vm.c
+index 2da8b1d57..cd32caac9 100644
+--- a/runtime/mm/vm.c
++++ b/runtime/mm/vm.c
+@@ -8,10 +8,12 @@ uintptr_t load_pa_start;
+ /* root page table */
+ pte root_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ /* page tables for kernel remap */
++pte kernel_l1_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte kernel_l2_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte kernel_l3_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ /* page tables for loading physical memory */
+-pte load_l2_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
++pte load_l1_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
++pte load_l2_page_tables[2][BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte load_l3_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ 
+ /* Program break */
+@@ -25,5 +27,3 @@ size_t freemem_size;
+ /* shared buffer */
+ uintptr_t shared_buffer;
+ uintptr_t shared_buffer_size;
+-
+-
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/include/mm/mm.h`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/include/mm/mm.h b/runtime/include/mm/mm.h
+index 4dda3f6bd..d2d800fdc 100644
+--- a/runtime/include/mm/mm.h
++++ b/runtime/include/mm/mm.h
+@@ -17,7 +17,7 @@ size_t test_va_range(uintptr_t vpn, size_t count);
+ uintptr_t get_program_break();
+ void set_program_break(uintptr_t new_break);
+ 
+-void map_with_reserved_page_table(uintptr_t base, uintptr_t size, uintptr_t ptr, pte* l2_pt, pte* l3_pt);
++void map_with_reserved_page_table(uintptr_t base, uintptr_t size, uintptr_t ptr, pte* l1_pt, pte* l2_pt, pte* l3_pt);
+ #endif /* USE_FREEMEM */
+ 
+ #endif /* _MM_H_ */
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/mm/mm.c`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/mm/mm.c b/runtime/mm/mm.c
+index 5d24bcb1f..4afb585d6 100644
+--- a/runtime/mm/mm.c
++++ b/runtime/mm/mm.c
+@@ -48,7 +48,7 @@ __walk_internal(pte* root, uintptr_t addr, int create)
+     t = (pte*) __va(pte_ppn(t[idx]) << RISCV_PAGE_BITS);
+   }
+ 
+-  return &t[RISCV_GET_PT_INDEX(addr, 3)];
++  return &t[RISCV_GET_PT_INDEX(addr, RISCV_PT_LEVELS)];
+ }
+ 
+ /* walk the page table and return PTE
+@@ -231,14 +231,30 @@ void
+ __map_with_reserved_page_table_64(uintptr_t dram_base,
+                                uintptr_t dram_size,
+                                uintptr_t ptr,
++                               pte* l1_pt,
+                                pte* l2_pt,
+                                pte* l3_pt)
+ {
+   uintptr_t offset = 0;
+-  uintptr_t leaf_level = 3;
++  uintptr_t leaf_level = RISCV_PT_LEVELS;
+   pte* leaf_pt = l3_pt;
+-  /* use megapage if l3_pt is null */
+-  if (!l3_pt) {
++
++  if (RISCV_PT_LEVELS == 4) {
++    assert(l1_pt);
++  } else {
++    assert(l2_pt);
++  }
++
++  /* Use the largest leaf allowed by the reserved table chain. */
++  if (RISCV_PT_LEVELS == 4) {
++    if (!l2_pt) {
++      leaf_level = 2;
++      leaf_pt = l1_pt;
++    } else if (!l3_pt) {
++      leaf_level = 3;
++      leaf_pt = l2_pt;
++    }
++  } else if (!l3_pt) {
+     leaf_level = 2;
+     leaf_pt = l2_pt;
+   }
+@@ -248,11 +264,15 @@ __map_with_reserved_page_table_64(uintptr_t dram_base,
+ 
+   /* set root page table entry */
+   root_page_table[RISCV_GET_PT_INDEX(ptr, 1)] =
+-    ptd_create(ppn(kernel_va_to_pa(l2_pt)));
++    ptd_create(ppn(kernel_va_to_pa(RISCV_PT_LEVELS == 4 ? l1_pt : l2_pt)));
++
++  if (RISCV_PT_LEVELS == 4 && leaf_pt != l1_pt) {
++    l1_pt[RISCV_GET_PT_INDEX(ptr, 2)] =
++      ptd_create(ppn(kernel_va_to_pa(l2_pt)));
++  }
+ 
+-  /* set L2 if it's not leaf */
+-  if (leaf_pt != l2_pt) {
+-    l2_pt[RISCV_GET_PT_INDEX(ptr, 2)] =
++  if (leaf_pt != l2_pt && l3_pt) {
++    l2_pt[RISCV_GET_PT_INDEX(ptr, RISCV_PT_LEVELS == 4 ? 3 : 2)] =
+       ptd_create(ppn(kernel_va_to_pa(l3_pt)));
+   }
+ 
+@@ -272,14 +292,15 @@ void
+ map_with_reserved_page_table(uintptr_t dram_base,
+                              uintptr_t dram_size,
+                              uintptr_t ptr,
++                             pte* l1_pt,
+                              pte* l2_pt,
+                              pte* l3_pt)
+ {
+   #if __riscv_xlen == 64
+   if (dram_size > RISCV_GET_LVL_PGSIZE(2))
+-    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l2_pt, 0);
++    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l1_pt, 0, 0);
+   else
+-    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l2_pt, l3_pt);
++    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l1_pt, l2_pt, l3_pt);
+   #elif __riscv_xlen == 32
+   if (dram_size > RISCV_GET_LVL_PGSIZE(1))
+     __map_with_reserved_page_table_32(dram_base, dram_size, ptr, 0);
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 80f84ecef..09eb89688 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -35,8 +35,15 @@ map_physical_memory(uintptr_t dram_base,
+   uintptr_t ptr = EYRIE_LOAD_START;
+   /* load address should not override kernel address */
+   assert(RISCV_GET_PT_INDEX(ptr, 1) != RISCV_GET_PT_INDEX(runtime_va_start, 1));
+-  map_with_reserved_page_table(dram_base, dram_size,
+-      ptr, load_l2_page_table, load_l3_page_table);
++  assert(dram_size <= EYRIE_LOAD_SIZE_MAX);
++
++  if (dram_size > RISCV_GET_LVL_PGSIZE(2)) {
++    map_with_reserved_page_table(dram_base, dram_size, ptr,
++        load_l1_page_table, 0, 0);
++  } else {
++    map_with_reserved_page_table(dram_base, dram_size, ptr,
++        load_l1_page_table, load_l2_page_tables[0], 0);
++  }
+ }
+ 
+ void
+@@ -52,7 +59,8 @@ remap_kernel_space(uintptr_t runtime_base,
+   #endif 
+ 
+   map_with_reserved_page_table(runtime_base, runtime_size,
+-     runtime_va_start, kernel_l2_page_table, kernel_l3_page_table);
++     runtime_va_start, kernel_l1_page_table, kernel_l2_page_table,
++     kernel_l3_page_table);
+ }
+ 
+ void
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/mm/paging.c`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/mm/paging.c b/runtime/mm/paging.c
+index a5dfebc4d..680daa1e6 100644
+--- a/runtime/mm/paging.c
++++ b/runtime/mm/paging.c
+@@ -13,6 +13,8 @@ uintptr_t paging_pa_start;
+ 
+ pte paging_l2_page_table[BIT(RISCV_PT_INDEX_BITS)]
+     __attribute__((aligned(RISCV_PAGE_SIZE)));
++pte paging_l1_page_table[BIT(RISCV_PT_INDEX_BITS)]
++    __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte paging_l3_page_table[BIT(RISCV_PT_INDEX_BITS)]
+     __attribute__((aligned(RISCV_PAGE_SIZE)));
+ 
+@@ -66,7 +68,8 @@ void init_paging(uintptr_t user_pa_start, uintptr_t user_pa_end)
+   debug("BACK: 0x%lx-0x%lx (%u KB), va 0x%lx", addr, addr + size, size/1024, paging_backing_storage_addr);
+ 
+   /* create VA mapping, we don't give execution perm */
+-  map_with_reserved_page_table(addr, size, EYRIE_PAGING_START, paging_l2_page_table, paging_l3_page_table);
++  map_with_reserved_page_table(addr, size, EYRIE_PAGING_START,
++      paging_l1_page_table, paging_l2_page_table, paging_l3_page_table);
+   /*
+   remap_physical_pages(vpn(EYRIE_PAGING_START),
+                        ppn(addr), size >> RISCV_PAGE_BITS,
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/include/mm/paging.h`
+**Date:** 2026-07-02 09:27
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/include/mm/paging.h b/runtime/include/mm/paging.h
+index e83d4580b..6c1245e62 100644
+--- a/runtime/include/mm/paging.h
++++ b/runtime/include/mm/paging.h
+@@ -22,6 +22,8 @@ uintptr_t paging_evict_and_free_one(uintptr_t swap_va);
+ extern uintptr_t paging_pa_start;
+ extern pte paging_l2_page_table[BIT(RISCV_PT_INDEX_BITS)]
+     __attribute__((aligned(RISCV_PAGE_SIZE)));
++extern pte paging_l1_page_table[BIT(RISCV_PT_INDEX_BITS)]
++    __attribute__((aligned(RISCV_PAGE_SIZE)));
+ extern pte paging_l3_page_table[BIT(RISCV_PT_INDEX_BITS)]
+     __attribute__((aligned(RISCV_PAGE_SIZE)));
+ 
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `runtime/runtime.ld.S`
+**Date:** 2026-07-02 09:28
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/runtime/runtime.ld.S b/runtime/runtime.ld.S
+index d0e6245cc..d79c22683 100644
+--- a/runtime/runtime.ld.S
++++ b/runtime/runtime.ld.S
+@@ -4,7 +4,7 @@ OUTPUT_ARCH( "riscv" )
+ 
+ SECTIONS
+ {
+-  . = 0xffffffffc0000000;
++  . = EYRIE_RUNTIME_START;
+   PROVIDE(rt_base = .);
+   .text : {
+     *(.text._start)
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `sdk/include/host/Memory.hpp`
+**Date:** 2026-07-02 09:28
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/sdk/include/host/Memory.hpp b/sdk/include/host/Memory.hpp
+index 53647db58..62ce888b8 100644
+--- a/sdk/include/host/Memory.hpp
++++ b/sdk/include/host/Memory.hpp
+@@ -50,7 +50,7 @@ typedef struct {
+ #define VA_BITS 32
+ #define RISCV_PGLEVEL_BITS 10
+ #else  // __riscv_xlen == 64 or x86 test
+-#define VA_BITS 39
++#define VA_BITS 48
+ #define RISCV_PGLEVEL_BITS 9
+ #endif
+ 
+@@ -129,7 +129,7 @@ class Memory {
+ 
+ class PhysicalEnclaveMemory : public Memory {
+  public:
+-  PhysicalEnclaveMemory() : batch_base(~0UL), batch_vaddr(0) {}
++  PhysicalEnclaveMemory() : epmMappedBase(0), batch_base(~0UL), batch_vaddr(0) {}
+   ~PhysicalEnclaveMemory() {}
+   void init(KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages);
+   uintptr_t readMem(uintptr_t src, size_t size);
+@@ -137,6 +137,7 @@ class PhysicalEnclaveMemory : public Memory {
+   uintptr_t allocMem(size_t size);
+   uintptr_t allocUtm(size_t size);
+  private:
++  uintptr_t epmMappedBase;
+   uintptr_t batch_base;
+   uintptr_t batch_vaddr;
+ };
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `sm/src/page.h`
+**Date:** 2026-07-02 09:28
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/sm/src/page.h b/sm/src/page.h
+index a75bab0b1..bde45c2d9 100644
+--- a/sm/src/page.h
++++ b/sm/src/page.h
+@@ -35,7 +35,10 @@
+ 
+ #define PTE_PPN_SHIFT 10
+ 
+-#define VA_BITS 39
++#if __riscv_xlen == 32
++#define VA_BITS 32
++#else
++#define VA_BITS 48
++#endif
+ #define RISCV_PGLEVEL_TOP ((VA_BITS - RISCV_PGSHIFT)/RISCV_PGLEVEL_BITS)
+ #endif
+-
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `sm/src/enclave.c`
+**Date:** 2026-07-02 09:28
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/sm/src/enclave.c b/sm/src/enclave.c
+index ca638a1b7..6ab140004 100644
+--- a/sm/src/enclave.c
++++ b/sm/src/enclave.c
+@@ -92,8 +92,7 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
+     csr_write(satp, enclaves[eid].encl_satp);
+   }
+ 
+-  /* Always restore enclave page table (needed on resume: swap_prev_smode_csrs
+-     can save the host's Sv48 SATP and restore it incorrectly for Sv39) */
++  /* Always restore enclave page table; resume may otherwise restore host SATP. */
+   csr_write(satp, enclaves[eid].encl_satp);
+ 
+   /* Disable M-mode timer interrupts while enclave runs */
+@@ -436,7 +435,7 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
+ #if __riscv_xlen == 32
+   enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV32 << HGATP_MODE_SHIFT));
+ #else
+-  enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV39 << HGATP_MODE_SHIFT));
++  enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV48 << HGATP_MODE_SHIFT));
+ #endif
+   enclaves[eid].n_thread = 0;
+   enclaves[eid].params = params;
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `linux-keystone-driver/riscv64.h`
+**Date:** 2026-07-02 09:28
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/linux-keystone-driver/riscv64.h b/linux-keystone-driver/riscv64.h
+index cbbdf42bb..58a30d786 100644
+--- a/linux-keystone-driver/riscv64.h
++++ b/linux-keystone-driver/riscv64.h
+@@ -50,8 +50,8 @@
+ #define RISCV_PGSIZE (1 << RISCV_PGSHIFT)
+ 
+ #define MEGAPAGE_SIZE ((uintptr_t)(RISCV_PGSIZE << RISCV_PGLEVEL_BITS))
+-#define SATP_MODE_CHOICE INSERT_FIELD(0, SATP64_MODE, SATP_MODE_SV39)
+-#define VA_BITS 39
++#define SATP_MODE_CHOICE INSERT_FIELD(0, SATP64_MODE, SATP_MODE_SV48)
++#define KEYSTONE_VA_BITS 48
+ #define GIGAPAGE_SIZE (MEGAPAGE_SIZE << RISCV_PGLEVEL_BITS)
+ 
+ //extern pte_t* root_page_table;
+
+```
+
+### Switch Keystone enclave paging to Sv48
+
+**Files:** `linux-keystone-driver/keystone.h`
+**Date:** 2026-07-02 09:28
+
+**Reason:** Support a 512GiB Eyrie load window and keep SDK, SM, and driver page-table mode consistent.
+
+```diff
+diff --git a/linux-keystone-driver/keystone.h b/linux-keystone-driver/keystone.h
+index cb54491ae..cbdfd17f9 100644
+--- a/linux-keystone-driver/keystone.h
++++ b/linux-keystone-driver/keystone.h
+@@ -19,7 +19,7 @@
+ 
+ #include <linux/file.h>
+ 
+-/* IMPORTANT: This code assumes Sv39 */
++/* IMPORTANT: This code assumes Sv48 for 64-bit enclave page tables. */
+ #include "riscv64.h"
+ 
+ #define PAGE_UP(addr)	(((addr)+((PAGE_SIZE)-1))&(~((PAGE_SIZE)-1)))
+@@ -40,6 +40,7 @@ struct epm {
+   size_t size;
+   unsigned long order;
+   paddr_t pa;
++  dma_addr_t dma_handle;
+   bool is_cma;
+ };
+ 
+
+```
+
+### Update SDK host memory handling for Sv48
+
+**Files:** `sdk/include/host/Memory.hpp`
+**Date:** 2026-07-02 09:29
+
+**Reason:** Generate and validate four-level enclave page tables in SDK source and avoid per-page EPM mmap pressure for large model packages.
+
+```diff
+diff --git a/sdk/include/host/Memory.hpp b/sdk/include/host/Memory.hpp
+index 53647db58..62ce888b8 100644
+--- a/sdk/include/host/Memory.hpp
++++ b/sdk/include/host/Memory.hpp
+@@ -50,7 +50,7 @@ typedef struct {
+ #define VA_BITS 32
+ #define RISCV_PGLEVEL_BITS 10
+ #else  // __riscv_xlen == 64 or x86 test
+-#define VA_BITS 39
++#define VA_BITS 48
+ #define RISCV_PGLEVEL_BITS 9
+ #endif
+ 
+@@ -129,7 +129,7 @@ class Memory {
+ 
+ class PhysicalEnclaveMemory : public Memory {
+  public:
+-  PhysicalEnclaveMemory() : batch_base(~0UL), batch_vaddr(0) {}
++  PhysicalEnclaveMemory() : epmMappedBase(0), batch_base(~0UL), batch_vaddr(0) {}
+   ~PhysicalEnclaveMemory() {}
+   void init(KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages);
+   uintptr_t readMem(uintptr_t src, size_t size);
+@@ -137,6 +137,7 @@ class PhysicalEnclaveMemory : public Memory {
+   uintptr_t allocMem(size_t size);
+   uintptr_t allocUtm(size_t size);
+  private:
++  uintptr_t epmMappedBase;
+   uintptr_t batch_base;
+   uintptr_t batch_vaddr;
+ };
+
+```
+
+### Update SDK host memory handling for Sv48
+
+**Files:** `sdk/src/host/Memory.cpp`
+**Date:** 2026-07-02 09:29
+
+**Reason:** Generate and validate four-level enclave page tables in SDK source and avoid per-page EPM mmap pressure for large model packages.
+
+```diff
+diff --git a/sdk/src/host/Memory.cpp b/sdk/src/host/Memory.cpp
+index a6d8f7cf4..669d81ffd 100644
+--- a/sdk/src/host/Memory.cpp
++++ b/sdk/src/host/Memory.cpp
+@@ -62,6 +62,8 @@ Memory::allocPage(uintptr_t va, uintptr_t src, unsigned int mode) {
+   uintptr_t* pFreeList = (mode == UTM_FULL ? &utmFreeList : &epmFreeList);
+ 
+   pte* pte = __ept_walk_create(va);
++  if (!pte)
++    return false;
+ 
+   /* if the page has been already allocated, return the page */
+   if (pte_val(*pte) & PTE_V) {
+@@ -131,21 +133,39 @@ Memory::__ept_continue_walk_create(uintptr_t addr, pte* ptePtr) {
+ pte*
+ Memory::__ept_walk_internal(uintptr_t addr, int create) {
+   pte* t = reinterpret_cast<pte*>(rootPageTable);
++  uintptr_t epm_map_start = rootPageTable;
++  uintptr_t epm_map_end = rootPageTable + epmSize;
+ 
+   int i;
+   for (i = (VA_BITS - RISCV_PGSHIFT) / RISCV_PGLEVEL_BITS - 1; i > 0; i--) {
+-    size_t idx = pt_idx(addr, i);
+-    if (addr == 0x41000000 && i == 1) {
+-      fprintf(stderr, "[WALK_DBG] addr=0x%lx i=%d idx=%lu t[idx]=0x%lx\n", (unsigned long)addr, i, (unsigned long)idx, (unsigned long)pte_val(t[idx]));
++    uintptr_t table_ptr = reinterpret_cast<uintptr_t>(t);
++    if (table_ptr < epm_map_start || table_ptr + PAGE_SIZE > epm_map_end) {
++      fprintf(stderr,
++              "[WALK_ERR] addr=0x%lx i=%d table=0x%lx outside [0x%lx,0x%lx)\n",
++              (unsigned long)addr, i, (unsigned long)table_ptr,
++              (unsigned long)epm_map_start, (unsigned long)epm_map_end);
+       fflush(stderr);
++      return 0;
+     }
++
++    size_t idx = pt_idx(addr, i);
+     if (!(pte_val(t[idx]) & PTE_V)) {
+       return create ? __ept_continue_walk_create(addr, &t[idx]) : 0;
+     }
+ 
+-    t = reinterpret_cast<pte*>(readMem(
+-        reinterpret_cast<uintptr_t>(pte_ppn(t[idx]) << RISCV_PGSHIFT),
+-        PAGE_SIZE));
++    uintptr_t next_table_pa =
++        reinterpret_cast<uintptr_t>(pte_ppn(t[idx]) << RISCV_PGSHIFT);
++    if (next_table_pa < startAddr || next_table_pa + PAGE_SIZE > startAddr + epmSize) {
++      fprintf(stderr,
++              "[WALK_ERR] addr=0x%lx i=%d next_pa=0x%lx outside epm [0x%lx,0x%lx) pte=0x%lx\n",
++              (unsigned long)addr, i, (unsigned long)next_table_pa,
++              (unsigned long)startAddr, (unsigned long)(startAddr + epmSize),
++              (unsigned long)pte_val(t[idx]));
++      fflush(stderr);
++      return 0;
++    }
++
++    t = reinterpret_cast<pte*>(readMem(next_table_pa, PAGE_SIZE));
+   }
+   return &t[pt_idx(addr, 0)];
+ }
+
+```
+
+### Update SDK host memory handling for Sv48
+
+**Files:** `sdk/src/host/Enclave.cpp`
+**Date:** 2026-07-02 09:29
+
+**Reason:** Generate and validate four-level enclave page tables in SDK source and avoid per-page EPM mmap pressure for large model packages.
+
+```diff
+diff --git a/sdk/src/host/Enclave.cpp b/sdk/src/host/Enclave.cpp
+index a2f481c9d..1c2d7ec1e 100644
+--- a/sdk/src/host/Enclave.cpp
++++ b/sdk/src/host/Enclave.cpp
+@@ -44,7 +44,6 @@ fep_flags_to_mode(uint32_t flags) {
+ 
+ Error
+ Enclave::loadFlatEnclave(const char* pkgpath) {
+-  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
+   FILE* fp = fopen(pkgpath, "rb");
+   if (!fp) {
+     ERROR("cannot open flat package: %s", pkgpath);
+@@ -61,9 +60,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     return Error::FileInitFailure;
+   }
+ 
+-  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
+-          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
+-
+   /* Read segment table */
+   FepSegment* segs = new FepSegment[hdr.num_segs];
+   if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
+@@ -74,7 +70,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+   }
+ 
+   /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
+-  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
+   for (uint32_t i = 0; i < hdr.num_segs; i++) {
+     FepSegment* seg = &segs[i];
+     if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
+@@ -85,7 +80,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+       return Error::VSpaceAllocationFailure;
+     }
+   }
+-  fprintf(stderr, "[FEP] pass2: loading pages\n");
+ 
+   /* Pass 2: load runtime segments (!U bit) with physical pages */
+   for (uint32_t pass = 0; pass < 2; pass++) {
+@@ -93,10 +87,8 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+ 
+     /* snapshot epmFreeList BEFORE allocating physical pages */
+     if (loading_runtime) {
+-      fprintf(stderr, "[FEP] loading runtime pages\n");
+       pMemory->startRuntimeMem();
+     } else {
+-      fprintf(stderr, "[FEP] loading eapp pages\n");
+       pMemory->startEappMem();
+     }
+ 
+@@ -140,8 +132,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     }
+   }
+ 
+-  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
+-
+   flat_rt_entry   = hdr.rt_entry;
+   flat_user_entry = hdr.user_entry;
+ 
+@@ -439,7 +429,7 @@ Enclave::init(
+     fclose(fp);
+     uintptr_t minPages = total_va_pages
+                          + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
+-                         + 65536; /* 256 MB extra for runtime safety */
++                         + 65536; /* 256 MB extra for runtime metadata/page tables */
+     if (pDevice->create(minPages) != Error::Success) {
+       destroy();
+       return Error::DeviceError;
+
+```
+
+### Update SDK host memory handling for Sv48
+
+**Files:** `sdk/src/host/PhysicalEnclaveMemory.cpp`
+**Date:** 2026-07-02 09:29
+
+**Reason:** Generate and validate four-level enclave page tables in SDK source and avoid per-page EPM mmap pressure for large model packages.
+
+```diff
+diff --git a/sdk/src/host/PhysicalEnclaveMemory.cpp b/sdk/src/host/PhysicalEnclaveMemory.cpp
+index 65ef83b1c..ec825b880 100644
+--- a/sdk/src/host/PhysicalEnclaveMemory.cpp
++++ b/sdk/src/host/PhysicalEnclaveMemory.cpp
+@@ -12,7 +12,8 @@ PhysicalEnclaveMemory::init(
+     KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages) {
+   pDevice = dev;
+   epmSize       = PAGE_SIZE * min_pages;
+-  rootPageTable = reinterpret_cast<uintptr_t>(pDevice->map(0, PAGE_SIZE));
++  epmMappedBase = reinterpret_cast<uintptr_t>(pDevice->map(0, epmSize));
++  rootPageTable = epmMappedBase;
+   epmFreeList   = phys_addr + PAGE_SIZE;
+   startAddr     = phys_addr;
+ }
+@@ -28,26 +29,27 @@ PhysicalEnclaveMemory::allocUtm(size_t size) {
+ 
+ uintptr_t
+ PhysicalEnclaveMemory::allocMem(size_t size) {
+-  assert(pDevice);
+-  return reinterpret_cast<uintptr_t>(pDevice->map(0, PAGE_SIZE));
++  (void)size;
++  assert(epmMappedBase);
++  return epmMappedBase;
+ }
+ 
+ uintptr_t
+ PhysicalEnclaveMemory::readMem(uintptr_t src, size_t size) {
+-  assert(pDevice);
+-  /* Map the page, read it, unmap immediately.
+-   * vm.max_map_count must be increased enough for large enclaves. */
+-  uintptr_t ret = reinterpret_cast<uintptr_t>(
+-      pDevice->map(src - startAddr, size));
+-  return ret;
++  (void)size;
++  assert(epmMappedBase);
++  assert(src >= startAddr);
++  assert(src < startAddr + epmSize);
++  return epmMappedBase + (src - startAddr);
+ }
+ 
+ void
+ PhysicalEnclaveMemory::writeMem(uintptr_t src, uintptr_t dst, size_t size) {
+-  assert(pDevice);
+-  void* va_dst = pDevice->map(dst - startAddr, size);
++  assert(epmMappedBase);
++  assert(dst >= startAddr);
++  assert(dst + size <= startAddr + epmSize);
++  void* va_dst = reinterpret_cast<void*>(epmMappedBase + (dst - startAddr));
+   memcpy(va_dst, reinterpret_cast<void*>(src), size);
+-  pDevice->unmap(va_dst, size);
+ }
+ 
+-}  // namespace Keystone
+\ No newline at end of file
++}  // namespace Keystone
+
+```
+
+### Fix SDK large-EPM host memory lifecycle
+
+**Files:** `sdk/include/host/Memory.hpp`
+**Date:** 2026-07-02 09:37
+
+**Reason:** Keep Sv48 host page-table generation in source, remove temporary debug logs, map large EPMs once, and release that mapping through the SDK object lifecycle.
+
+```diff
+diff --git a/sdk/include/host/Memory.hpp b/sdk/include/host/Memory.hpp
+index 53647db58..da1ba0f91 100644
+--- a/sdk/include/host/Memory.hpp
++++ b/sdk/include/host/Memory.hpp
+@@ -50,7 +50,7 @@ typedef struct {
+ #define VA_BITS 32
+ #define RISCV_PGLEVEL_BITS 10
+ #else  // __riscv_xlen == 64 or x86 test
+-#define VA_BITS 39
++#define VA_BITS 48
+ #define RISCV_PGLEVEL_BITS 9
+ #endif
+ 
+@@ -70,7 +70,7 @@ typedef struct {
+ class Memory {
+  public:
+   Memory();
+-  ~Memory() {}
++  virtual ~Memory() {}
+   virtual void init(
+       KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages)  = 0;
+   virtual uintptr_t readMem(uintptr_t src, size_t size)            = 0;
+@@ -129,16 +129,15 @@ class Memory {
+ 
+ class PhysicalEnclaveMemory : public Memory {
+  public:
+-  PhysicalEnclaveMemory() : batch_base(~0UL), batch_vaddr(0) {}
+-  ~PhysicalEnclaveMemory() {}
++  PhysicalEnclaveMemory() : epmMappedBase(0) {}
++  ~PhysicalEnclaveMemory();
+   void init(KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages);
+   uintptr_t readMem(uintptr_t src, size_t size);
+   void writeMem(uintptr_t src, uintptr_t dst, size_t size);
+   uintptr_t allocMem(size_t size);
+   uintptr_t allocUtm(size_t size);
+  private:
+-  uintptr_t batch_base;
+-  uintptr_t batch_vaddr;
++  uintptr_t epmMappedBase;
+ };
+ 
+ // Simulated memory reads/writes from calloc'ed memory
+
+```
+
+### Fix SDK large-EPM host memory lifecycle
+
+**Files:** `sdk/src/host/Memory.cpp`
+**Date:** 2026-07-02 09:37
+
+**Reason:** Keep Sv48 host page-table generation in source, remove temporary debug logs, map large EPMs once, and release that mapping through the SDK object lifecycle.
+
+```diff
+diff --git a/sdk/src/host/Memory.cpp b/sdk/src/host/Memory.cpp
+index a6d8f7cf4..bb78e3139 100644
+--- a/sdk/src/host/Memory.cpp
++++ b/sdk/src/host/Memory.cpp
+@@ -9,10 +9,18 @@
+ namespace Keystone {
+ 
+ Memory::Memory() {
++  pDevice       = 0;
++  epmSize       = 0;
+   epmFreeList   = 0;
+   utmFreeList   = 0;
+   rootPageTable = 0;
+   startAddr     = 0;
++  runtimePhysAddr = 0;
++  eappPhysAddr  = 0;
++  freePhysAddr  = 0;
++  utmPhysAddr   = 0;
++  untrustedPtr  = 0;
++  untrustedSize = 0;
+ }
+ 
+ void
+@@ -62,6 +70,8 @@ Memory::allocPage(uintptr_t va, uintptr_t src, unsigned int mode) {
+   uintptr_t* pFreeList = (mode == UTM_FULL ? &utmFreeList : &epmFreeList);
+ 
+   pte* pte = __ept_walk_create(va);
++  if (!pte)
++    return false;
+ 
+   /* if the page has been already allocated, return the page */
+   if (pte_val(*pte) & PTE_V) {
+@@ -117,35 +127,45 @@ Memory::__ept_continue_walk_create(uintptr_t addr, pte* ptePtr) {
+   /* Intermediate PTEs must NOT have U bit (reserved per spec) */
+   *ptePtr = ptd_create(free_ppn);
+   epmFreeList += PAGE_SIZE;
+-  if (addr == 0x41000000) {
+-    static int _count = 0; _count++;
+-    fprintf(stderr, "[HOST_CWC%d] epmFL=0x%lx free_ppn=%lu pteVal=0x%lx ptePtr[0]=0x%lx\n",
+-            _count, (unsigned long)epmFreeList, (unsigned long)free_ppn,
+-            (unsigned long)pte_val(*ptePtr),
+-            (unsigned long)ptePtr[0].pte);
+-    fflush(stderr);
+-  }
+   return __ept_walk_create(addr);
+ }
+ 
+ pte*
+ Memory::__ept_walk_internal(uintptr_t addr, int create) {
+   pte* t = reinterpret_cast<pte*>(rootPageTable);
++  uintptr_t epm_map_start = rootPageTable;
++  uintptr_t epm_map_end = rootPageTable + epmSize;
+ 
+   int i;
+   for (i = (VA_BITS - RISCV_PGSHIFT) / RISCV_PGLEVEL_BITS - 1; i > 0; i--) {
+-    size_t idx = pt_idx(addr, i);
+-    if (addr == 0x41000000 && i == 1) {
+-      fprintf(stderr, "[WALK_DBG] addr=0x%lx i=%d idx=%lu t[idx]=0x%lx\n", (unsigned long)addr, i, (unsigned long)idx, (unsigned long)pte_val(t[idx]));
++    uintptr_t table_ptr = reinterpret_cast<uintptr_t>(t);
++    if (table_ptr < epm_map_start || table_ptr + PAGE_SIZE > epm_map_end) {
++      fprintf(stderr,
++              "[WALK_ERR] addr=0x%lx i=%d table=0x%lx outside [0x%lx,0x%lx)\n",
++              (unsigned long)addr, i, (unsigned long)table_ptr,
++              (unsigned long)epm_map_start, (unsigned long)epm_map_end);
+       fflush(stderr);
++      return 0;
+     }
++
++    size_t idx = pt_idx(addr, i);
+     if (!(pte_val(t[idx]) & PTE_V)) {
+       return create ? __ept_continue_walk_create(addr, &t[idx]) : 0;
+     }
+ 
+-    t = reinterpret_cast<pte*>(readMem(
+-        reinterpret_cast<uintptr_t>(pte_ppn(t[idx]) << RISCV_PGSHIFT),
+-        PAGE_SIZE));
++    uintptr_t next_table_pa =
++        reinterpret_cast<uintptr_t>(pte_ppn(t[idx]) << RISCV_PGSHIFT);
++    if (next_table_pa < startAddr || next_table_pa + PAGE_SIZE > startAddr + epmSize) {
++      fprintf(stderr,
++              "[WALK_ERR] addr=0x%lx i=%d next_pa=0x%lx outside epm [0x%lx,0x%lx) pte=0x%lx\n",
++              (unsigned long)addr, i, (unsigned long)next_table_pa,
++              (unsigned long)startAddr, (unsigned long)(startAddr + epmSize),
++              (unsigned long)pte_val(t[idx]));
++      fflush(stderr);
++      return 0;
++    }
++
++    t = reinterpret_cast<pte*>(readMem(next_table_pa, PAGE_SIZE));
+   }
+   return &t[pt_idx(addr, 0)];
+ }
+
+```
+
+### Fix SDK large-EPM host memory lifecycle
+
+**Files:** `sdk/src/host/PhysicalEnclaveMemory.cpp`
+**Date:** 2026-07-02 09:37
+
+**Reason:** Keep Sv48 host page-table generation in source, remove temporary debug logs, map large EPMs once, and release that mapping through the SDK object lifecycle.
+
+```diff
+diff --git a/sdk/src/host/PhysicalEnclaveMemory.cpp b/sdk/src/host/PhysicalEnclaveMemory.cpp
+index 65ef83b1c..8770ec156 100644
+--- a/sdk/src/host/PhysicalEnclaveMemory.cpp
++++ b/sdk/src/host/PhysicalEnclaveMemory.cpp
+@@ -7,12 +7,19 @@
+ 
+ namespace Keystone {
+ 
++PhysicalEnclaveMemory::~PhysicalEnclaveMemory() {
++  if (pDevice && epmMappedBase && epmSize)
++    pDevice->unmap(reinterpret_cast<void*>(epmMappedBase), epmSize);
++}
++
+ void
+ PhysicalEnclaveMemory::init(
+     KeystoneDevice* dev, uintptr_t phys_addr, size_t min_pages) {
+   pDevice = dev;
+   epmSize       = PAGE_SIZE * min_pages;
+-  rootPageTable = reinterpret_cast<uintptr_t>(pDevice->map(0, PAGE_SIZE));
++  epmMappedBase = reinterpret_cast<uintptr_t>(pDevice->map(0, epmSize));
++  assert(epmMappedBase);
++  rootPageTable = epmMappedBase;
+   epmFreeList   = phys_addr + PAGE_SIZE;
+   startAddr     = phys_addr;
+ }
+@@ -28,26 +35,29 @@ PhysicalEnclaveMemory::allocUtm(size_t size) {
+ 
+ uintptr_t
+ PhysicalEnclaveMemory::allocMem(size_t size) {
+-  assert(pDevice);
+-  return reinterpret_cast<uintptr_t>(pDevice->map(0, PAGE_SIZE));
++  (void)size;
++  assert(epmMappedBase);
++  return epmMappedBase;
+ }
+ 
+ uintptr_t
+ PhysicalEnclaveMemory::readMem(uintptr_t src, size_t size) {
+-  assert(pDevice);
+-  /* Map the page, read it, unmap immediately.
+-   * vm.max_map_count must be increased enough for large enclaves. */
+-  uintptr_t ret = reinterpret_cast<uintptr_t>(
+-      pDevice->map(src - startAddr, size));
+-  return ret;
++  (void)size;
++  assert(epmMappedBase);
++  assert(src >= startAddr);
++  assert(size <= epmSize);
++  assert(src - startAddr <= epmSize - size);
++  return epmMappedBase + (src - startAddr);
+ }
+ 
+ void
+ PhysicalEnclaveMemory::writeMem(uintptr_t src, uintptr_t dst, size_t size) {
+-  assert(pDevice);
+-  void* va_dst = pDevice->map(dst - startAddr, size);
++  assert(epmMappedBase);
++  assert(dst >= startAddr);
++  assert(size <= epmSize);
++  assert(dst - startAddr <= epmSize - size);
++  void* va_dst = reinterpret_cast<void*>(epmMappedBase + (dst - startAddr));
+   memcpy(va_dst, reinterpret_cast<void*>(src), size);
+-  pDevice->unmap(va_dst, size);
+ }
+ 
+-}  // namespace Keystone
+\ No newline at end of file
++}  // namespace Keystone
+
+```
+
+### Fix SDK large-EPM host memory lifecycle
+
+**Files:** `sdk/src/host/Enclave.cpp`
+**Date:** 2026-07-02 09:37
+
+**Reason:** Keep Sv48 host page-table generation in source, remove temporary debug logs, map large EPMs once, and release that mapping through the SDK object lifecycle.
+
+```diff
+diff --git a/sdk/src/host/Enclave.cpp b/sdk/src/host/Enclave.cpp
+index a2f481c9d..ebf502109 100644
+--- a/sdk/src/host/Enclave.cpp
++++ b/sdk/src/host/Enclave.cpp
+@@ -27,8 +27,14 @@ Enclave::Enclave() {
+ }
+ 
+ Enclave::~Enclave() {
+-  if (runtimeFile) delete runtimeFile;
+-  if (enclaveFile) delete enclaveFile;
++  if (runtimeFile) {
++    delete runtimeFile;
++    runtimeFile = NULL;
++  }
++  if (enclaveFile) {
++    delete enclaveFile;
++    enclaveFile = NULL;
++  }
+   destroy();
+ }
+ 
+@@ -44,7 +50,6 @@ fep_flags_to_mode(uint32_t flags) {
+ 
+ Error
+ Enclave::loadFlatEnclave(const char* pkgpath) {
+-  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
+   FILE* fp = fopen(pkgpath, "rb");
+   if (!fp) {
+     ERROR("cannot open flat package: %s", pkgpath);
+@@ -61,9 +66,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     return Error::FileInitFailure;
+   }
+ 
+-  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
+-          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
+-
+   /* Read segment table */
+   FepSegment* segs = new FepSegment[hdr.num_segs];
+   if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
+@@ -74,7 +76,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+   }
+ 
+   /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
+-  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
+   for (uint32_t i = 0; i < hdr.num_segs; i++) {
+     FepSegment* seg = &segs[i];
+     if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
+@@ -85,7 +86,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+       return Error::VSpaceAllocationFailure;
+     }
+   }
+-  fprintf(stderr, "[FEP] pass2: loading pages\n");
+ 
+   /* Pass 2: load runtime segments (!U bit) with physical pages */
+   for (uint32_t pass = 0; pass < 2; pass++) {
+@@ -93,10 +93,8 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+ 
+     /* snapshot epmFreeList BEFORE allocating physical pages */
+     if (loading_runtime) {
+-      fprintf(stderr, "[FEP] loading runtime pages\n");
+       pMemory->startRuntimeMem();
+     } else {
+-      fprintf(stderr, "[FEP] loading eapp pages\n");
+       pMemory->startEappMem();
+     }
+ 
+@@ -140,8 +138,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     }
+   }
+ 
+-  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
+-
+   flat_rt_entry   = hdr.rt_entry;
+   flat_user_entry = hdr.user_entry;
+ 
+@@ -439,7 +435,7 @@ Enclave::init(
+     fclose(fp);
+     uintptr_t minPages = total_va_pages
+                          + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
+-                         + 65536; /* 256 MB extra for runtime safety */
++                         + 65536; /* 256 MB extra for runtime metadata/page tables */
+     if (pDevice->create(minPages) != Error::Success) {
+       destroy();
+       return Error::DeviceError;
+@@ -587,6 +583,11 @@ Enclave::destroy() {
+     runtimeFile = NULL;
+   }
+ 
++  if (pMemory) {
++    delete pMemory;
++    pMemory = NULL;
++  }
++
+   if (!pDevice) return Error::Success;
+   return pDevice->destroy();
+ }
+
+```
+
+### Map Sv48 load window with 2MiB leaves
+
+**Files:** `runtime/include/mm/vm_defs.h`
+**Date:** 2026-07-02 09:53
+
+**Reason:** Support a 512GiB Eyrie load window without overmapping EPM regions to 1GiB boundaries.
+
+```diff
+diff --git a/runtime/include/mm/vm_defs.h b/runtime/include/mm/vm_defs.h
+index 1e6710f6e..576b6f6e7 100644
+--- a/runtime/include/mm/vm_defs.h
++++ b/runtime/include/mm/vm_defs.h
+@@ -6,7 +6,7 @@
+ 
+ #if __riscv_xlen == 64
+ #define RISCV_PT_INDEX_BITS 9
+-#define RISCV_PT_LEVELS 3
++#define RISCV_PT_LEVELS 4
+ #elif __riscv_xlen == 32
+ #define RISCV_PT_INDEX_BITS 10
+ #define RISCV_PT_LEVELS 2
+@@ -33,16 +33,22 @@
+ /* Starting address of the enclave memory */
+ 
+ #if __riscv_xlen == 64
+-#define EYRIE_LOAD_START 0xffffffff00000000
+-#define EYRIE_PAGING_START 0xffffffff40000000
+-#define EYRIE_UNTRUSTED_START 0xffffffff80000000
++#define EYRIE_LOAD_SIZE_MAX 0x0000008000000000
++#define EYRIE_LOAD_L2_TABLES 512
++#define EYRIE_LOAD_START 0xfffffe0000000000
++#define EYRIE_PAGING_START (EYRIE_LOAD_START + EYRIE_LOAD_SIZE_MAX)
++#define EYRIE_UNTRUSTED_START (EYRIE_PAGING_START + EYRIE_LOAD_SIZE_MAX)
++#define EYRIE_RUNTIME_START 0xffffffffc0000000
+ #define EYRIE_USER_STACK_START 0x0000000040000000
+ #define EYRIE_ANON_REGION_START \
+   0x0000002000000000  // Arbitrary VA to start looking for large mappings
+ #elif __riscv_xlen == 32
++#define EYRIE_LOAD_SIZE_MAX 0x10000000
++#define EYRIE_LOAD_L2_TABLES 1
+ #define EYRIE_LOAD_START 0xf0000000
+ #define EYRIE_PAGING_START 0x40000000
+ #define EYRIE_UNTRUSTED_START 0x80000000
++#define EYRIE_RUNTIME_START 0xc0000000
+ #define EYRIE_USER_STACK_START 0x40000000
+ #define EYRIE_ANON_REGION_START \
+   0x20000000  // Arbitrary VA to start looking for large mappings
+
+```
+
+### Map Sv48 load window with 2MiB leaves
+
+**Files:** `runtime/mm/vm.c`
+**Date:** 2026-07-02 09:53
+
+**Reason:** Support a 512GiB Eyrie load window without overmapping EPM regions to 1GiB boundaries.
+
+```diff
+diff --git a/runtime/mm/vm.c b/runtime/mm/vm.c
+index 2da8b1d57..26cae4968 100644
+--- a/runtime/mm/vm.c
++++ b/runtime/mm/vm.c
+@@ -8,10 +8,12 @@ uintptr_t load_pa_start;
+ /* root page table */
+ pte root_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ /* page tables for kernel remap */
++pte kernel_l1_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte kernel_l2_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte kernel_l3_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ /* page tables for loading physical memory */
+-pte load_l2_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
++pte load_l1_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
++pte load_l2_page_tables[EYRIE_LOAD_L2_TABLES][BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte load_l3_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ 
+ /* Program break */
+@@ -25,5 +27,3 @@ size_t freemem_size;
+ /* shared buffer */
+ uintptr_t shared_buffer;
+ uintptr_t shared_buffer_size;
+-
+-
+
+```
+
+### Map Sv48 load window with 2MiB leaves
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-02 09:53
+
+**Reason:** Support a 512GiB Eyrie load window without overmapping EPM regions to 1GiB boundaries.
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 80f84ecef..6337ca1c7 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -33,10 +33,25 @@ map_physical_memory(uintptr_t dram_base,
+                     uintptr_t dram_size)
+ {
+   uintptr_t ptr = EYRIE_LOAD_START;
++  uintptr_t offset = 0;
++  uintptr_t chunk_size = RISCV_GET_LVL_PGSIZE(2);
++  unsigned int chunk = 0;
+   /* load address should not override kernel address */
+   assert(RISCV_GET_PT_INDEX(ptr, 1) != RISCV_GET_PT_INDEX(runtime_va_start, 1));
+-  map_with_reserved_page_table(dram_base, dram_size,
+-      ptr, load_l2_page_table, load_l3_page_table);
++  assert(dram_size <= EYRIE_LOAD_SIZE_MAX);
++
++  while (offset < dram_size) {
++    uintptr_t this_chunk = dram_size - offset;
++    if (this_chunk > chunk_size)
++      this_chunk = chunk_size;
++
++    assert(chunk < EYRIE_LOAD_L2_TABLES);
++    map_with_reserved_page_table(dram_base + offset, this_chunk, ptr + offset,
++        load_l1_page_table, load_l2_page_tables[chunk], 0);
++
++    offset += this_chunk;
++    chunk++;
++  }
+ }
+ 
+ void
+@@ -52,7 +67,8 @@ remap_kernel_space(uintptr_t runtime_base,
+   #endif 
+ 
+   map_with_reserved_page_table(runtime_base, runtime_size,
+-     runtime_va_start, kernel_l2_page_table, kernel_l3_page_table);
++     runtime_va_start, kernel_l1_page_table, kernel_l2_page_table,
++     kernel_l3_page_table);
+ }
+ 
+ void
+
+```
+
+### Map Sv48 load window with 2MiB leaves
+
+**Files:** `runtime/mm/mm.c`
+**Date:** 2026-07-02 09:53
+
+**Reason:** Support a 512GiB Eyrie load window without overmapping EPM regions to 1GiB boundaries.
+
+```diff
+diff --git a/runtime/mm/mm.c b/runtime/mm/mm.c
+index 5d24bcb1f..8cbc1817e 100644
+--- a/runtime/mm/mm.c
++++ b/runtime/mm/mm.c
+@@ -48,7 +48,7 @@ __walk_internal(pte* root, uintptr_t addr, int create)
+     t = (pte*) __va(pte_ppn(t[idx]) << RISCV_PAGE_BITS);
+   }
+ 
+-  return &t[RISCV_GET_PT_INDEX(addr, 3)];
++  return &t[RISCV_GET_PT_INDEX(addr, RISCV_PT_LEVELS)];
+ }
+ 
+ /* walk the page table and return PTE
+@@ -231,14 +231,30 @@ void
+ __map_with_reserved_page_table_64(uintptr_t dram_base,
+                                uintptr_t dram_size,
+                                uintptr_t ptr,
++                               pte* l1_pt,
+                                pte* l2_pt,
+                                pte* l3_pt)
+ {
+   uintptr_t offset = 0;
+-  uintptr_t leaf_level = 3;
++  uintptr_t leaf_level = RISCV_PT_LEVELS;
+   pte* leaf_pt = l3_pt;
+-  /* use megapage if l3_pt is null */
+-  if (!l3_pt) {
++
++  if (RISCV_PT_LEVELS == 4) {
++    assert(l1_pt);
++  } else {
++    assert(l2_pt);
++  }
++
++  /* Use the largest leaf allowed by the reserved table chain. */
++  if (RISCV_PT_LEVELS == 4) {
++    if (!l2_pt) {
++      leaf_level = 2;
++      leaf_pt = l1_pt;
++    } else if (!l3_pt) {
++      leaf_level = 3;
++      leaf_pt = l2_pt;
++    }
++  } else if (!l3_pt) {
+     leaf_level = 2;
+     leaf_pt = l2_pt;
+   }
+@@ -248,11 +264,15 @@ __map_with_reserved_page_table_64(uintptr_t dram_base,
+ 
+   /* set root page table entry */
+   root_page_table[RISCV_GET_PT_INDEX(ptr, 1)] =
+-    ptd_create(ppn(kernel_va_to_pa(l2_pt)));
++    ptd_create(ppn(kernel_va_to_pa(RISCV_PT_LEVELS == 4 ? l1_pt : l2_pt)));
++
++  if (RISCV_PT_LEVELS == 4 && leaf_pt != l1_pt) {
++    l1_pt[RISCV_GET_PT_INDEX(ptr, 2)] =
++      ptd_create(ppn(kernel_va_to_pa(l2_pt)));
++  }
+ 
+-  /* set L2 if it's not leaf */
+-  if (leaf_pt != l2_pt) {
+-    l2_pt[RISCV_GET_PT_INDEX(ptr, 2)] =
++  if (leaf_pt != l2_pt && l3_pt) {
++    l2_pt[RISCV_GET_PT_INDEX(ptr, RISCV_PT_LEVELS == 4 ? 3 : 2)] =
+       ptd_create(ppn(kernel_va_to_pa(l3_pt)));
+   }
+ 
+@@ -272,14 +292,15 @@ void
+ map_with_reserved_page_table(uintptr_t dram_base,
+                              uintptr_t dram_size,
+                              uintptr_t ptr,
++                             pte* l1_pt,
+                              pte* l2_pt,
+                              pte* l3_pt)
+ {
+   #if __riscv_xlen == 64
+-  if (dram_size > RISCV_GET_LVL_PGSIZE(2))
+-    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l2_pt, 0);
++  if (!l2_pt)
++    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l1_pt, 0, 0);
+   else
+-    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l2_pt, l3_pt);
++    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l1_pt, l2_pt, l3_pt);
+   #elif __riscv_xlen == 32
+   if (dram_size > RISCV_GET_LVL_PGSIZE(1))
+     __map_with_reserved_page_table_32(dram_base, dram_size, ptr, 0);
+
+```
+
+### Use Sv48 superpage load window
+
+**Files:** `runtime/include/mm/vm.h`
+**Date:** 2026-07-02 10:00
+
+**Reason:** Remove the static load L2 table declaration because the runtime load alias now uses a single Sv48 L1 table with 1GiB leaves.
+
+```diff
+diff --git a/runtime/include/mm/vm.h b/runtime/include/mm/vm.h
+index 684b96e6a..ff8df23b8 100644
+--- a/runtime/include/mm/vm.h
++++ b/runtime/include/mm/vm.h
+@@ -13,7 +13,7 @@ extern uintptr_t runtime_va_start;
+ extern uintptr_t kernel_offset;
+ extern uintptr_t load_pa_start;
+ 
+-/* Eyrie is for Sv39 */
++/* Eyrie uses Sv48 on 64-bit targets for a larger enclave load window. */
+ static inline uintptr_t satp_new(uintptr_t pa)
+ {
+   return (SATP_MODE | (pa >> RISCV_PAGE_BITS));
+@@ -68,10 +68,11 @@ static inline uintptr_t pte_ppn(pte pte)
+ /* root page table */
+ extern pte root_page_table[];
+ /* page tables for kernel remap */
++extern pte kernel_l1_page_table[];
+ extern pte kernel_l2_page_table[];
+ extern pte kernel_l3_page_table[];
+ /* page tables for loading physical memory */
+-extern pte load_l2_page_table[];
++extern pte load_l1_page_table[];
+ extern pte load_l3_page_table[];
+ 
+ /* Program break */
+
+```
+
+### Use Sv48 superpage load window
+
+**Files:** `runtime/include/mm/vm_defs.h`
+**Date:** 2026-07-02 10:00
+
+**Reason:** Avoid embedding 512 static L2 page tables in the runtime image while retaining a 512GiB Sv48 load window via 1GiB leaves.
+
+```diff
+diff --git a/runtime/include/mm/vm_defs.h b/runtime/include/mm/vm_defs.h
+index 1e6710f6e..2aa97c5b9 100644
+--- a/runtime/include/mm/vm_defs.h
++++ b/runtime/include/mm/vm_defs.h
+@@ -6,7 +6,7 @@
+ 
+ #if __riscv_xlen == 64
+ #define RISCV_PT_INDEX_BITS 9
+-#define RISCV_PT_LEVELS 3
++#define RISCV_PT_LEVELS 4
+ #elif __riscv_xlen == 32
+ #define RISCV_PT_INDEX_BITS 10
+ #define RISCV_PT_LEVELS 2
+@@ -33,16 +33,20 @@
+ /* Starting address of the enclave memory */
+ 
+ #if __riscv_xlen == 64
+-#define EYRIE_LOAD_START 0xffffffff00000000
+-#define EYRIE_PAGING_START 0xffffffff40000000
+-#define EYRIE_UNTRUSTED_START 0xffffffff80000000
++#define EYRIE_LOAD_SIZE_MAX 0x0000008000000000
++#define EYRIE_LOAD_START 0xfffffe0000000000
++#define EYRIE_PAGING_START (EYRIE_LOAD_START + EYRIE_LOAD_SIZE_MAX)
++#define EYRIE_UNTRUSTED_START (EYRIE_PAGING_START + EYRIE_LOAD_SIZE_MAX)
++#define EYRIE_RUNTIME_START 0xffffffffc0000000
+ #define EYRIE_USER_STACK_START 0x0000000040000000
+ #define EYRIE_ANON_REGION_START \
+   0x0000002000000000  // Arbitrary VA to start looking for large mappings
+ #elif __riscv_xlen == 32
++#define EYRIE_LOAD_SIZE_MAX 0x10000000
+ #define EYRIE_LOAD_START 0xf0000000
+ #define EYRIE_PAGING_START 0x40000000
+ #define EYRIE_UNTRUSTED_START 0x80000000
++#define EYRIE_RUNTIME_START 0xc0000000
+ #define EYRIE_USER_STACK_START 0x40000000
+ #define EYRIE_ANON_REGION_START \
+   0x20000000  // Arbitrary VA to start looking for large mappings
+
+```
+
+### Use Sv48 superpage load window
+
+**Files:** `runtime/mm/vm.c`
+**Date:** 2026-07-02 10:00
+
+**Reason:** Remove the 512-entry static L2 table array that bloated the runtime image and caused large-enclave startup to stall.
+
+```diff
+diff --git a/runtime/mm/vm.c b/runtime/mm/vm.c
+index 2da8b1d57..67f3c182b 100644
+--- a/runtime/mm/vm.c
++++ b/runtime/mm/vm.c
+@@ -8,10 +8,11 @@ uintptr_t load_pa_start;
+ /* root page table */
+ pte root_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ /* page tables for kernel remap */
++pte kernel_l1_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte kernel_l2_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte kernel_l3_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ /* page tables for loading physical memory */
+-pte load_l2_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
++pte load_l1_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ pte load_l3_page_table[BIT(RISCV_PT_INDEX_BITS)] __attribute__((aligned(RISCV_PAGE_SIZE)));
+ 
+ /* Program break */
+@@ -25,5 +26,3 @@ size_t freemem_size;
+ /* shared buffer */
+ uintptr_t shared_buffer;
+ uintptr_t shared_buffer_size;
+-
+-
+
+```
+
+### Use Sv48 superpage load window
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-02 10:00
+
+**Reason:** Map the EPM load alias through a single Sv48 L1 table using 1GiB leaves so the maximum 512GiB window does not require hundreds of bootstrap page tables.
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 80f84ecef..6615526d4 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -35,15 +35,17 @@ map_physical_memory(uintptr_t dram_base,
+   uintptr_t ptr = EYRIE_LOAD_START;
+   /* load address should not override kernel address */
+   assert(RISCV_GET_PT_INDEX(ptr, 1) != RISCV_GET_PT_INDEX(runtime_va_start, 1));
+-  map_with_reserved_page_table(dram_base, dram_size,
+-      ptr, load_l2_page_table, load_l3_page_table);
++  assert(dram_size <= EYRIE_LOAD_SIZE_MAX);
++
++  map_with_reserved_page_table(dram_base, dram_size, ptr,
++      load_l1_page_table, 0, 0);
+ }
+ 
+ void
+ remap_kernel_space(uintptr_t runtime_base,
+                    uintptr_t runtime_size)
+ {
+-  /* eyrie runtime is supposed to be smaller than a megapage */
++  /* eyrie runtime is mapped with reserved bootstrap page tables. */
+ 
+   #if __riscv_xlen == 64
+   assert(runtime_size <= RISCV_GET_LVL_PGSIZE(2));
+@@ -52,7 +54,8 @@ remap_kernel_space(uintptr_t runtime_base,
+   #endif 
+ 
+   map_with_reserved_page_table(runtime_base, runtime_size,
+-     runtime_va_start, kernel_l2_page_table, kernel_l3_page_table);
++     runtime_va_start, kernel_l1_page_table, kernel_l2_page_table,
++     kernel_l3_page_table);
+ }
+ 
+ void
+
+```
+
+### Run a fixed llama inference inside the enclave
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 10:38
+
+**Reason:** Replace the backend-only demo with a minimal single-turn chat inference path that loads the embedded GGUF via a temporary file pointer, formats a user prompt with the model chat template, and generates a deterministic reply.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..4f913000d 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -5,8 +5,8 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -171,6 +171,83 @@ extern const uint8_t _binary_model_gguf_start[];
+ extern const uint8_t _binary_model_gguf_end[];
+ #define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
+ 
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  FILE *file = tmpfile();
++  if (!file) {
++    printf("[llama] tmpfile failed\n");
++    return NULL;
++  }
++
++  if (fwrite(_binary_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fclose(file);
++    return NULL;
++  }
++
++  rewind(file);
++
++  llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file_ptr(file, model_params);
++  fclose(file);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
++
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+   uintptr_t *p = sp + 1 + argc + 1;
+@@ -186,7 +263,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Fix recursive puts stub in llama enclave
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 10:47
+
+**Reason:** The local puts override resolved back to itself through libc call paths, causing unbounded recursion and a stack fault before model loading could proceed. Replace it with direct SBI console output.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..f7d24f371 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -5,8 +5,8 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +160,97 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  FILE *file = tmpfile();
++  if (!file) {
++    printf("[llama] tmpfile failed\n");
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fclose(file);
++    return NULL;
++  }
++
++  rewind(file);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file_ptr(file, model_params);
++  fclose(file);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +267,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Use explicit /tmp path for embedded GGUF staging
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 10:57
+
+**Reason:** Eyrie's libc tmpfile path fails inside the enclave, likely because anonymous temporary-file creation is unsupported. Stage the embedded model through a normal fopen on /tmp so the existing file-pointer load API can proceed.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..a17e155e4 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,10 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +161,99 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "/tmp/llama-model.gguf";
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fclose(file);
++    return NULL;
++  }
++
++  rewind(file);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file_ptr(file, model_params);
++  fclose(file);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +270,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Prefer path-based GGUF loading inside the enclave
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 11:05
+
+**Reason:** The llama FILE-pointer loading path still failed after staging the embedded model to /tmp. Reopen the staged GGUF through llama_model_load_from_file to avoid the FILE* adapter layer and use the standard path-based loader.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..acf066027 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,10 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +161,99 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "/tmp/llama-model.gguf";
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +270,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Add staged GGUF file probes inside the enclave
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 12:07
+
+**Reason:** Objcopy preserves the model bytes, so the remaining failure must be in the enclave's file reopen, stdio positioning, GGUF metadata parsing, or later llama model loading. Add explicit probes to print staged file size, header bytes, and gguf_init_from_file status before the full model load.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..c41c57f30 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,10 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +161,147 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "/tmp/llama-model.gguf";
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  file = fopen(model_path, "rb");
++  if (!file) {
++    printf("[llama] reopen(%s) failed errno=%d\n", model_path, errno);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_END) != 0) {
++    printf("[llama] fseek end failed errno=%d\n", errno);
++    fclose(file);
++    return NULL;
++  }
++
++  long size = ftell(file);
++  if (size < 0) {
++    printf("[llama] ftell failed errno=%d\n", errno);
++    fclose(file);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_SET) != 0) {
++    printf("[llama] fseek set failed errno=%d\n", errno);
++    fclose(file);
++    return NULL;
++  }
++
++  unsigned char head[16] = {0};
++  size_t nread = fread(head, 1, sizeof(head), file);
++  printf("[llama] staged file size=%ld first16=", size);
++  for (size_t i = 0; i < nread; ++i) {
++    printf("%02x", head[i]);
++  }
++  printf("\n");
++  fclose(file);
++
++  struct ggml_context *gguf_ctx = NULL;
++  struct gguf_init_params gguf_params = {
++    .no_alloc = true,
++    .ctx = &gguf_ctx,
++  };
++  struct gguf_context *gguf = gguf_init_from_file(model_path, gguf_params);
++  if (!gguf) {
++    printf("[llama] gguf_init_from_file failed\n");
++    return NULL;
++  }
++  printf("[llama] gguf kv=%d tensors=%d version=%u\n",
++         gguf_get_n_kv(gguf), gguf_get_n_tensors(gguf), gguf_get_version(gguf));
++  gguf_free(gguf);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +318,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Flush llama GGUF probes before returning
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 12:16
+
+**Reason:** The staged-file diagnostics were printed through buffered stdio and did not appear in the failure path. Force stdout flushes after each probe so the enclave exposes the exact failing step.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..14bee7959 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,10 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +161,156 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "/tmp/llama-model.gguf";
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  file = fopen(model_path, "rb");
++  if (!file) {
++    printf("[llama] reopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_END) != 0) {
++    printf("[llama] fseek end failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  long size = ftell(file);
++  if (size < 0) {
++    printf("[llama] ftell failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_SET) != 0) {
++    printf("[llama] fseek set failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  unsigned char head[16] = {0};
++  size_t nread = fread(head, 1, sizeof(head), file);
++  printf("[llama] staged file size=%ld first16=", size);
++  for (size_t i = 0; i < nread; ++i) {
++    printf("%02x", head[i]);
++  }
++  printf("\n");
++  fflush(stdout);
++  fclose(file);
++
++  struct ggml_context *gguf_ctx = NULL;
++  struct gguf_init_params gguf_params = {
++    .no_alloc = true,
++    .ctx = &gguf_ctx,
++  };
++  struct gguf_context *gguf = gguf_init_from_file(model_path, gguf_params);
++  if (!gguf) {
++    printf("[llama] gguf_init_from_file failed\n");
++    fflush(stdout);
++    return NULL;
++  }
++  printf("[llama] gguf kv=%d tensors=%d version=%u\n",
++         gguf_get_n_kv(gguf), gguf_get_n_tensors(gguf), gguf_get_version(gguf));
++  fflush(stdout);
++  gguf_free(gguf);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +327,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Stage embedded GGUF in the enclave working directory
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 14:14
+
+**Reason:** The enclave runtime does not provide a visible /tmp directory, so fopen on /tmp/llama-model.gguf fails with ENOENT before GGUF parsing begins. Switch the staged model path to the enclave working directory to keep the file-based loading flow while avoiding the missing /tmp dependency.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..368927248 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,10 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +161,156 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "./llama-model.gguf";
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  file = fopen(model_path, "rb");
++  if (!file) {
++    printf("[llama] reopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_END) != 0) {
++    printf("[llama] fseek end failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  long size = ftell(file);
++  if (size < 0) {
++    printf("[llama] ftell failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_SET) != 0) {
++    printf("[llama] fseek set failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  unsigned char head[16] = {0};
++  size_t nread = fread(head, 1, sizeof(head), file);
++  printf("[llama] staged file size=%ld first16=", size);
++  for (size_t i = 0; i < nread; ++i) {
++    printf("%02x", head[i]);
++  }
++  printf("\n");
++  fflush(stdout);
++  fclose(file);
++
++  struct ggml_context *gguf_ctx = NULL;
++  struct gguf_init_params gguf_params = {
++    .no_alloc = true,
++    .ctx = &gguf_ctx,
++  };
++  struct gguf_context *gguf = gguf_init_from_file(model_path, gguf_params);
++  if (!gguf) {
++    printf("[llama] gguf_init_from_file failed\n");
++    fflush(stdout);
++    return NULL;
++  }
++  printf("[llama] gguf kv=%d tensors=%d version=%u\n",
++         gguf_get_n_kv(gguf), gguf_get_n_tensors(gguf), gguf_get_version(gguf));
++  fflush(stdout);
++  gguf_free(gguf);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +327,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Probe enclave filesystem visibility before GGUF staging
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 14:23
+
+**Reason:** Both /tmp and the relative working-directory path fail with ENOENT, so the next step is to determine what filesystem namespace the enclave can actually see before continuing to debug file-based GGUF loading.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..c302cf803 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,11 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
++#include <unistd.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +162,187 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static void probe_file_access(void) {
++  char cwd[128] = {0};
++  if (getcwd(cwd, sizeof(cwd)) != NULL) {
++    printf("[llama] cwd=%s\n", cwd);
++  } else {
++    printf("[llama] getcwd failed errno=%d\n", errno);
++  }
++  fflush(stdout);
++
++  static const char *paths[] = {
++      ".",
++      "/",
++      "/root",
++      "/root/keystone",
++      "/etc",
++      "/etc/inittab",
++      "/proc/version",
++  };
++
++  for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
++    FILE *f = fopen(paths[i], "rb");
++    printf("[llama] probe fopen(%s) => %s errno=%d\n",
++           paths[i], f ? "ok" : "fail", f ? 0 : errno);
++    fflush(stdout);
++    if (f) {
++      fclose(f);
++    }
++  }
++}
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "./llama-model.gguf";
++  probe_file_access();
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  file = fopen(model_path, "rb");
++  if (!file) {
++    printf("[llama] reopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_END) != 0) {
++    printf("[llama] fseek end failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  long size = ftell(file);
++  if (size < 0) {
++    printf("[llama] ftell failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_SET) != 0) {
++    printf("[llama] fseek set failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  unsigned char head[16] = {0};
++  size_t nread = fread(head, 1, sizeof(head), file);
++  printf("[llama] staged file size=%ld first16=", size);
++  for (size_t i = 0; i < nread; ++i) {
++    printf("%02x", head[i]);
++  }
++  printf("\n");
++  fflush(stdout);
++  fclose(file);
++
++  struct ggml_context *gguf_ctx = NULL;
++  struct gguf_init_params gguf_params = {
++    .no_alloc = true,
++    .ctx = &gguf_ctx,
++  };
++  struct gguf_context *gguf = gguf_init_from_file(model_path, gguf_params);
++  if (!gguf) {
++    printf("[llama] gguf_init_from_file failed\n");
++    fflush(stdout);
++    return NULL;
++  }
++  printf("[llama] gguf kv=%d tensors=%d version=%u\n",
++         gguf_get_n_kv(gguf), gguf_get_n_tensors(gguf), gguf_get_version(gguf));
++  fflush(stdout);
++  gguf_free(gguf);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +359,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Trace and propagate proxied file syscall errors
+
+**Files:** `sdk/src/edge/edge_syscall.c`
+**Date:** 2026-07-02 14:35
+
+**Reason:** Log host-side openat/fstatat/getcwd/chdir activity and return -errno on failures so enclave libc sees accurate file operation results.
+
+```diff
+diff --git a/sdk/src/edge/edge_syscall.c b/sdk/src/edge/edge_syscall.c
+index 64970143a..a39273f21 100644
+--- a/sdk/src/edge/edge_syscall.c
++++ b/sdk/src/edge/edge_syscall.c
+@@ -1,4 +1,5 @@
+ #include "edge_syscall.h"
++#include <errno.h>
+ #include <fcntl.h>
+ #include <stdio.h>
+ #include <unistd.h>
+@@ -22,8 +23,6 @@ incoming_syscall(struct edge_call* edge_call) {
+   edge_call->return_data.call_status = CALL_STATUS_OK;
+ 
+   int64_t ret;
+-  int is_str_ret = 0; 
+-  char* retbuf;
+ 
+   // Right now we only handle some io syscalls. See runtime for how
+   // others are handled.
+@@ -33,6 +32,9 @@ incoming_syscall(struct edge_call* edge_call) {
+       ret                           = openat(
+           openat_args->dirfd, openat_args->path, openat_args->flags,
+           openat_args->mode);
++      printf("[host-syscall] openat(dirfd=%d,path=%s,flags=0x%x,mode=%o) => %ld errno=%d\n",
++             openat_args->dirfd, openat_args->path, openat_args->flags,
++             openat_args->mode, (long) ret, ret < 0 ? errno : 0);
+       break;
+     case (SYS_unlinkat):;
+       sargs_SYS_unlinkat* unlinkat_args =
+@@ -51,17 +53,22 @@ incoming_syscall(struct edge_call* edge_call) {
+       ret = fstatat(
+           fstatat_args->dirfd, fstatat_args->pathname, &fstatat_args->stats,
+           fstatat_args->flags);
+-			break;
++      printf("[host-syscall] fstatat(dirfd=%d,path=%s,flags=0x%x) => %ld errno=%d\n",
++             fstatat_args->dirfd, fstatat_args->pathname, fstatat_args->flags,
++             (long) ret, ret < 0 ? errno : 0);
++      break;
+     case (SYS_fstat):; 
+       sargs_SYS_fstat* fstat_args = (sargs_SYS_fstat*)syscall_info->data;
+       // Note the use of the implicit buffer in the stat args object (stats)
+ 			ret = fstat(fstat_args->fd, &fstat_args->stats);
+ 			break;
+-    case (SYS_getcwd):;  // TODO: how to handle string return 
++    case (SYS_getcwd):;
+       sargs_SYS_getcwd* getcwd_args = (sargs_SYS_getcwd*)syscall_info->data;
+-			retbuf = getcwd(getcwd_args->buf, getcwd_args->size);
+-      is_str_ret = 1;
+-			break;
++      ret = getcwd(getcwd_args->buf, getcwd_args->size) ? 0 : -errno;
++      printf("[host-syscall] getcwd(size=%zu) => %ld cwd=%s errno=%d\n",
++             getcwd_args->size, (long) ret,
++             ret == 0 ? getcwd_args->buf : "<null>", ret < 0 ? errno : 0);
++      break;
+     case (SYS_write):;
+       sargs_SYS_write* write_args = (sargs_SYS_write*)syscall_info->data;
+       ret = write(write_args->fd, write_args->buf, write_args->len);
+@@ -96,8 +103,10 @@ incoming_syscall(struct edge_call* edge_call) {
+       break;
+     case(SYS_chdir):;
+       sargs_SYS_chdir* chdir_args = (sargs_SYS_chdir*) syscall_info->data;
+-			ret = chdir(chdir_args->path);
+-			break;
++      ret = chdir(chdir_args->path);
++      printf("[host-syscall] chdir(path=%s) => %ld errno=%d\n",
++             chdir_args->path, (long) ret, ret < 0 ? errno : 0);
++      break;
+     case (SYS_epoll_ctl):;
+       sargs_SYS_epoll_ctl *epoll_ctl_args = (sargs_SYS_epoll_ctl *) syscall_info->data;
+       ret = epoll_ctl(epoll_ctl_args->epfd, epoll_ctl_args->op, epoll_ctl_args->fd, (struct epoll_event * ) &epoll_ctl_args->event);
+@@ -195,16 +204,14 @@ incoming_syscall(struct edge_call* edge_call) {
+ 
+   /* Setup return value */
+   void* ret_data_ptr      = (void*)edge_call_data_ptr();
+-  if (is_str_ret) {
+-    *(char**) ret_data_ptr = retbuf; // TODO: check ptr stuff
+-    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
+-      goto syscall_error;
+-  } else {
+-    *(int64_t*)ret_data_ptr = ret;
+-    if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
+-      goto syscall_error;
++  if (ret < 0 && errno != 0 && ret == -1) {
++    ret = -errno;
+   }
+ 
++  *(int64_t*)ret_data_ptr = ret;
++  if (edge_call_setup_ret(edge_call, ret_data_ptr, sizeof(int64_t)) != 0)
++    goto syscall_error;
++
+   return;
+ 
+ syscall_error:
+
+```
+
+### Fix llama enclave errno storage
+
+**Files:** `sdk/examples/llama_keystone/common/util.c`
+**Date:** 2026-07-02 14:35
+
+**Reason:** The previous __errno stub returned an uninitialized pointer, making fopen/getcwd diagnostics unreliable.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/common/util.c b/sdk/examples/llama_keystone/common/util.c
+index c670af2bc..5e66b9e9a 100644
+--- a/sdk/examples/llama_keystone/common/util.c
++++ b/sdk/examples/llama_keystone/common/util.c
+@@ -20,7 +20,7 @@
+ 
+ #include "util.h"
+ 
+-int *__dummy__errno__ptr__;
++static int dummy_errno_storage;
+ 
+ unsigned long int timer;
+ unsigned long int time_timer;
+@@ -41,5 +41,5 @@ int similarity_check_32b(float a, float b, float threshold) {
+     return 1;
+ }
+ 
+-// Dummy declaration for libm exp
+-int *__errno(void) { return __dummy__errno__ptr__; }
++// Provide a stable errno storage for enclave-side libc code.
++int *__errno(void) { return &dummy_errno_storage; }
+
+```
+
+### Fix runtime getcwd and chdir wrappers
+
+**Files:** `runtime/call/io_wrap.c`
+**Date:** 2026-07-02 14:35
+
+**Reason:** Stop forcing chdir to ./ and make getcwd honor proxy failures so enclave file syscall behavior matches the host result.
+
+```diff
+diff --git a/runtime/call/io_wrap.c b/runtime/call/io_wrap.c
+index 5830883d0..a0eb70e92 100644
+--- a/runtime/call/io_wrap.c
++++ b/runtime/call/io_wrap.c
+@@ -405,7 +405,7 @@ uintptr_t io_syscall_fcntl(int fd, int cmd, uintptr_t arg){
+ uintptr_t io_syscall_getcwd(char* buf, size_t size){ 
+   struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+   sargs_SYS_getcwd* args = (sargs_SYS_getcwd*)edge_syscall->data;
+-  // char* syscall_ret = NULL;
++  uintptr_t ret = -1;
+ 
+   edge_syscall->syscall_num = SYS_getcwd;
+ 
+@@ -414,7 +414,11 @@ uintptr_t io_syscall_getcwd(char* buf, size_t size){
+   size_t totalsize = (sizeof(struct edge_syscall) +
+                       sizeof(sargs_SYS_getcwd));
+ 
+-  dispatch_edgecall_syscall(edge_syscall, totalsize);
++  ret = dispatch_edgecall_syscall(edge_syscall, totalsize);
++  if ((intptr_t) ret < 0) {
++    print_strace("[runtime] proxied getcwd failed = %li\r\n", ret);
++    return ret;
++  }
+ 
+   copy_to_user(buf, &args->buf, size);
+   print_strace("[runtime] proxied getcwd\r\n");
+@@ -422,18 +426,22 @@ uintptr_t io_syscall_getcwd(char* buf, size_t size){
+ }
+ 
+ uintptr_t io_syscall_chdir(char* path) { 
+-
+-  path = "./"; 
+   uintptr_t ret = -1;
+   struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+   sargs_SYS_chdir* args = (sargs_SYS_chdir*)edge_syscall->data;
+-  // char* syscall_ret = NULL;
++  size_t pathlen;
+ 
+   edge_syscall->syscall_num = SYS_chdir;
+ 
+-  copy_from_user(args->path, path, strlen(path) + 1);
++  ALLOW_USER_ACCESS(pathlen = _strlen(path) + 1);
++  if (edge_call_check_ptr_valid((uintptr_t)args->path, pathlen) != 0) {
++    print_strace("[runtime] proxied chdir invalid path buffer\r\n");
++    return ret;
++  }
++
++  copy_from_user(args->path, path, pathlen);
+ 
+-  size_t totalsize = (sizeof(struct edge_syscall)) + strlen(args->path) + 1;
++  size_t totalsize = (sizeof(struct edge_syscall)) + pathlen;
+   ret = dispatch_edgecall_syscall(edge_syscall, totalsize);
+ 
+   print_strace("[runtime] proxied chdir: %s\r\n", args->path);
+
+```
+
+### Add raw syscall probes for llama file loading
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 14:55
+
+**Reason:** Differentiate libc wrapper failures from Keystone syscall proxy failures by invoking getcwd/openat directly before staged GGUF file access.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..cac587661 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,13 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <sys/syscall.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -160,16 +164,204 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static void probe_file_access(void) {
++  char cwd[128] = {0};
++  errno = 0;
++  if (getcwd(cwd, sizeof(cwd)) != NULL) {
++    printf("[llama] cwd=%s\n", cwd);
++  } else {
++    printf("[llama] getcwd failed errno=%d\n", errno);
++  }
++  fflush(stdout);
++
++  memset(cwd, 0, sizeof(cwd));
++  errno = 0;
++  long raw_getcwd = syscall(SYS_getcwd, cwd, sizeof(cwd));
++  printf("[llama] raw syscall getcwd => %ld errno=%d cwd=%s\n",
++         raw_getcwd, errno, raw_getcwd >= 0 ? cwd : "<null>");
++  fflush(stdout);
++
++  errno = 0;
++  long raw_open = syscall(SYS_openat, AT_FDCWD, "/etc/inittab", O_RDONLY, 0);
++  printf("[llama] raw syscall openat(/etc/inittab) => %ld errno=%d\n",
++         raw_open, errno);
++  fflush(stdout);
++  if (raw_open >= 0) {
++    syscall(SYS_close, raw_open);
++  }
++
++  static const char *paths[] = {
++      ".",
++      "/",
++      "/root",
++      "/root/keystone",
++      "/etc",
++      "/etc/inittab",
++      "/proc/version",
++  };
++
++  for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
++    FILE *f = fopen(paths[i], "rb");
++    printf("[llama] probe fopen(%s) => %s errno=%d\n",
++           paths[i], f ? "ok" : "fail", f ? 0 : errno);
++    fflush(stdout);
++    if (f) {
++      fclose(f);
++    }
++  }
++}
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "./llama-model.gguf";
++  probe_file_access();
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  file = fopen(model_path, "rb");
++  if (!file) {
++    printf("[llama] reopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_END) != 0) {
++    printf("[llama] fseek end failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  long size = ftell(file);
++  if (size < 0) {
++    printf("[llama] ftell failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_SET) != 0) {
++    printf("[llama] fseek set failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  unsigned char head[16] = {0};
++  size_t nread = fread(head, 1, sizeof(head), file);
++  printf("[llama] staged file size=%ld first16=", size);
++  for (size_t i = 0; i < nread; ++i) {
++    printf("%02x", head[i]);
++  }
++  printf("\n");
++  fflush(stdout);
++  fclose(file);
++
++  struct ggml_context *gguf_ctx = NULL;
++  struct gguf_init_params gguf_params = {
++    .no_alloc = true,
++    .ctx = &gguf_ctx,
++  };
++  struct gguf_context *gguf = gguf_init_from_file(model_path, gguf_params);
++  if (!gguf) {
++    printf("[llama] gguf_init_from_file failed\n");
++    fflush(stdout);
++    return NULL;
++  }
++  printf("[llama] gguf kv=%d tensors=%d version=%u\n",
++         gguf_get_n_kv(gguf), gguf_get_n_tensors(gguf), gguf_get_version(gguf));
++  fflush(stdout);
++  gguf_free(gguf);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +378,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+
+```
+
+### Add unconditional runtime file-syscall probes
+
+**Files:** `runtime/call/io_wrap.c`
+**Date:** 2026-07-02 15:10
+
+**Reason:** Bypass disabled strace macros and print when getcwd/openat wrappers are entered while diagnosing enclave file loading failures.
+
+```diff
+diff --git a/runtime/call/io_wrap.c b/runtime/call/io_wrap.c
+index 5830883d0..6a8e0a4f4 100644
+--- a/runtime/call/io_wrap.c
++++ b/runtime/call/io_wrap.c
+@@ -183,6 +183,8 @@ uintptr_t io_syscall_openat(int dirfd, char* path,
+   args->flags = flags;
+   args->mode = mode;
+   uintptr_t ret = -1;
++  printf("[runtime-debug] io_syscall_openat enter dirfd=%d flags=0x%x\n", dirfd,
++         flags);
+ 
+   size_t pathlen;
+   ALLOW_USER_ACCESS(pathlen = _strlen(path)+1);
+@@ -405,7 +407,9 @@ uintptr_t io_syscall_fcntl(int fd, int cmd, uintptr_t arg){
+ uintptr_t io_syscall_getcwd(char* buf, size_t size){ 
+   struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+   sargs_SYS_getcwd* args = (sargs_SYS_getcwd*)edge_syscall->data;
+-  // char* syscall_ret = NULL;
++  uintptr_t ret = -1;
++  printf("[runtime-debug] io_syscall_getcwd enter size=%lu\n",
++         (unsigned long) size);
+ 
+   edge_syscall->syscall_num = SYS_getcwd;
+ 
+@@ -414,7 +418,11 @@ uintptr_t io_syscall_getcwd(char* buf, size_t size){
+   size_t totalsize = (sizeof(struct edge_syscall) +
+                       sizeof(sargs_SYS_getcwd));
+ 
+-  dispatch_edgecall_syscall(edge_syscall, totalsize);
++  ret = dispatch_edgecall_syscall(edge_syscall, totalsize);
++  if ((intptr_t) ret < 0) {
++    print_strace("[runtime] proxied getcwd failed = %li\r\n", ret);
++    return ret;
++  }
+ 
+   copy_to_user(buf, &args->buf, size);
+   print_strace("[runtime] proxied getcwd\r\n");
+@@ -422,18 +430,22 @@ uintptr_t io_syscall_getcwd(char* buf, size_t size){
+ }
+ 
+ uintptr_t io_syscall_chdir(char* path) { 
+-
+-  path = "./"; 
+   uintptr_t ret = -1;
+   struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
+   sargs_SYS_chdir* args = (sargs_SYS_chdir*)edge_syscall->data;
+-  // char* syscall_ret = NULL;
++  size_t pathlen;
+ 
+   edge_syscall->syscall_num = SYS_chdir;
+ 
+-  copy_from_user(args->path, path, strlen(path) + 1);
++  ALLOW_USER_ACCESS(pathlen = _strlen(path) + 1);
++  if (edge_call_check_ptr_valid((uintptr_t)args->path, pathlen) != 0) {
++    print_strace("[runtime] proxied chdir invalid path buffer\r\n");
++    return ret;
++  }
++
++  copy_from_user(args->path, path, pathlen);
+ 
+-  size_t totalsize = (sizeof(struct edge_syscall)) + strlen(args->path) + 1;
++  size_t totalsize = (sizeof(struct edge_syscall)) + pathlen;
+   ret = dispatch_edgecall_syscall(edge_syscall, totalsize);
+ 
+   print_strace("[runtime] proxied chdir: %s\r\n", args->path);
+
+```
+
+### Trace edge syscall dispatch failures
+
+**Files:** `runtime/call/syscall.c`
+**Date:** 2026-07-02 15:10
+
+**Reason:** Print direct diagnostics when stop_enclave, return status, or edge return pointer handling fails during proxied syscalls.
+
+```diff
+diff --git a/runtime/call/syscall.c b/runtime/call/syscall.c
+index fe7360d26..f31434a03 100644
+--- a/runtime/call/syscall.c
++++ b/runtime/call/syscall.c
+@@ -46,20 +46,30 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
+   ret = sbi_stop_enclave(1);
+ 
+   if (ret != 0) {
++    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
++           ret, (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(edge_call->return_data.call_status != CALL_STATUS_OK){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
++           edge_call->return_data.call_status,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   uintptr_t return_ptr;
+   size_t return_len;
+   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(return_len < sizeof(uintptr_t)){
++    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
++           (unsigned long) return_len,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+
+```
+
+### Exit llama eapp through runtime syscall path
+
+**Files:** `sdk/examples/llama_keystone/eapp/main.c`
+**Date:** 2026-07-02 15:28
+
+**Reason:** With user ecalls delegated to Eyrie, direct U-mode Keystone SBI exit would be interpreted as a runtime syscall; use SYS_exit_group so Eyrie exits the enclave cleanly.
+
+```diff
+diff --git a/sdk/examples/llama_keystone/eapp/main.c b/sdk/examples/llama_keystone/eapp/main.c
+index 4d47a258a..b2ed20f05 100644
+--- a/sdk/examples/llama_keystone/eapp/main.c
++++ b/sdk/examples/llama_keystone/eapp/main.c
+@@ -4,9 +4,13 @@
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
++#include <errno.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <sys/syscall.h>
+ 
+-/* Bump allocator for __sbrk (TLS + malloc) */
+-#define HEAP_SIZE (64 * 1024 * 1024)
++/* Bump allocator for TLS, model metadata, ggml buffers, and KV cache. */
++#define HEAP_SIZE (1024ull * 1024ull * 1024ull)
+ static char heap_pool[HEAP_SIZE] __attribute__((aligned(4096)));
+ static char *heap_brk = heap_pool;
+ extern void *__curbrk;
+@@ -121,14 +125,10 @@ static void sbi_puts(const char *s) {
+   while (*s) sbi_putchar(*s++);
+ }
+ 
+-static void sbi_exit_enclave(long code) {
+-  register unsigned long a0 asm("a0") = (unsigned long)code;
+-  register unsigned long a6 asm("a6") = 3006;
+-  register unsigned long a7 asm("a7") = 0x08424b45;
+-  __asm__ __volatile__ ("ecall"
+-                        : "+r"(a0)
+-                        : "r"(a6), "r"(a7)
+-                        : "memory");
++static void runtime_exit(long code) {
++  register unsigned long a0 asm("a0") = (unsigned long) code;
++  register unsigned long a7 asm("a7") = SYS_exit_group;
++  __asm__ __volatile__("ecall" : "+r"(a0) : "r"(a7) : "memory");
+   while (1) { }
+ }
+ 
+@@ -160,16 +160,204 @@ int pthread_detach(pthread_t t) { (void)t;return 0; }
+ pthread_t pthread_self(void) { return 0; }
+ int pthread_setaffinity_np(pthread_t t, size_t s, const cpu_set_t *m) { (void)t;(void)s;(void)m;return 0; }
+ int pthread_setschedparam(pthread_t t, int p, const struct sched_param *m) { (void)t;(void)p;(void)m;return 0; }
+-int puts(const char *s) { printf("%s\n", s); return 0; }
++int puts(const char *s) {
++  sbi_puts(s);
++  sbi_putchar('\n');
++  return 0;
++}
+ 
+ /* llama/ggml API */
+ #include "llama.h"
+ #include "ggml.h"
+ 
+ /* Embedded model */
+-extern const uint8_t _binary_model_gguf_start[];
+-extern const uint8_t _binary_model_gguf_end[];
+-#define MODEL_SIZE ((size_t)(_binary_model_gguf_end - _binary_model_gguf_start))
++extern const uint8_t _binary__tmp_model_gguf_start[];
++extern const uint8_t _binary__tmp_model_gguf_end[];
++#define MODEL_SIZE ((size_t)(_binary__tmp_model_gguf_end - _binary__tmp_model_gguf_start))
++
++#define PROMPT_TEXT "你是谁？请用中文简短回答。"
++#define N_PREDICT 64
++
++static void probe_file_access(void) {
++  char cwd[128] = {0};
++  errno = 0;
++  if (getcwd(cwd, sizeof(cwd)) != NULL) {
++    printf("[llama] cwd=%s\n", cwd);
++  } else {
++    printf("[llama] getcwd failed errno=%d\n", errno);
++  }
++  fflush(stdout);
++
++  memset(cwd, 0, sizeof(cwd));
++  errno = 0;
++  long raw_getcwd = syscall(SYS_getcwd, cwd, sizeof(cwd));
++  printf("[llama] raw syscall getcwd => %ld errno=%d cwd=%s\n",
++         raw_getcwd, errno, raw_getcwd >= 0 ? cwd : "<null>");
++  fflush(stdout);
++
++  errno = 0;
++  long raw_open = syscall(SYS_openat, AT_FDCWD, "/etc/inittab", O_RDONLY, 0);
++  printf("[llama] raw syscall openat(/etc/inittab) => %ld errno=%d\n",
++         raw_open, errno);
++  fflush(stdout);
++  if (raw_open >= 0) {
++    syscall(SYS_close, raw_open);
++  }
++
++  static const char *paths[] = {
++      ".",
++      "/",
++      "/root",
++      "/root/keystone",
++      "/etc",
++      "/etc/inittab",
++      "/proc/version",
++  };
++
++  for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
++    FILE *f = fopen(paths[i], "rb");
++    printf("[llama] probe fopen(%s) => %s errno=%d\n",
++           paths[i], f ? "ok" : "fail", f ? 0 : errno);
++    fflush(stdout);
++    if (f) {
++      fclose(f);
++    }
++  }
++}
++
++static struct llama_model *load_embedded_model(void) {
++  static const char model_path[] = "./llama-model.gguf";
++  probe_file_access();
++  FILE *file = fopen(model_path, "wb+");
++  if (!file) {
++    printf("[llama] fopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fwrite(_binary__tmp_model_gguf_start, 1, MODEL_SIZE, file) != MODEL_SIZE) {
++    printf("[llama] write embedded model failed\n");
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  fflush(file);
++  fclose(file);
++
++  file = fopen(model_path, "rb");
++  if (!file) {
++    printf("[llama] reopen(%s) failed errno=%d\n", model_path, errno);
++    fflush(stdout);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_END) != 0) {
++    printf("[llama] fseek end failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  long size = ftell(file);
++  if (size < 0) {
++    printf("[llama] ftell failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  if (fseek(file, 0, SEEK_SET) != 0) {
++    printf("[llama] fseek set failed errno=%d\n", errno);
++    fflush(stdout);
++    fclose(file);
++    return NULL;
++  }
++
++  unsigned char head[16] = {0};
++  size_t nread = fread(head, 1, sizeof(head), file);
++  printf("[llama] staged file size=%ld first16=", size);
++  for (size_t i = 0; i < nread; ++i) {
++    printf("%02x", head[i]);
++  }
++  printf("\n");
++  fflush(stdout);
++  fclose(file);
++
++  struct ggml_context *gguf_ctx = NULL;
++  struct gguf_init_params gguf_params = {
++    .no_alloc = true,
++    .ctx = &gguf_ctx,
++  };
++  struct gguf_context *gguf = gguf_init_from_file(model_path, gguf_params);
++  if (!gguf) {
++    printf("[llama] gguf_init_from_file failed\n");
++    fflush(stdout);
++    return NULL;
++  }
++  printf("[llama] gguf kv=%d tensors=%d version=%u\n",
++         gguf_get_n_kv(gguf), gguf_get_n_tensors(gguf), gguf_get_version(gguf));
++  fflush(stdout);
++  gguf_free(gguf);
++
++  struct llama_model_params model_params = llama_model_default_params();
++  model_params.use_mmap = false;
++  model_params.use_mlock = false;
++
++  struct llama_model *model = llama_model_load_from_file(model_path, model_params);
++  remove(model_path);
++  return model;
++}
++
++static int tokenize_prompt(const struct llama_vocab *vocab,
++                           const char *prompt,
++                           llama_token **out_tokens,
++                           int *out_count) {
++  int count = -llama_tokenize(vocab, prompt, strlen(prompt), NULL, 0, true, true);
++  if (count <= 0) {
++    return -1;
++  }
++
++  llama_token *tokens = (llama_token *) malloc((size_t) count * sizeof(*tokens));
++  if (!tokens) {
++    return -1;
++  }
++
++  if (llama_tokenize(vocab, prompt, strlen(prompt), tokens, count, true, true) < 0) {
++    free(tokens);
++    return -1;
++  }
++
++  *out_tokens = tokens;
++  *out_count = count;
++  return 0;
++}
++
++static char *format_chat_prompt(struct llama_model *model) {
++  const char *tmpl = llama_model_chat_template(model, NULL);
++  struct llama_chat_message msg = {
++    .role = "user",
++    .content = PROMPT_TEXT,
++  };
++
++  int32_t len = llama_chat_apply_template(tmpl, &msg, 1, true, NULL, 0);
++  if (len <= 0) {
++    return NULL;
++  }
++
++  char *buf = (char *) malloc((size_t) len + 1);
++  if (!buf) {
++    return NULL;
++  }
++
++  if (llama_chat_apply_template(tmpl, &msg, 1, true, buf, len + 1) < 0) {
++    free(buf);
++    return NULL;
++  }
++
++  buf[len] = '\0';
++  return buf;
++}
+ 
+ static Elf64_auxv_t *find_auxv(uintptr_t *sp) {
+   uintptr_t argc = sp[0];
+@@ -186,7 +374,90 @@ int main(void) {
+   llama_backend_init();
+   sbi_puts("[llama] Backend init done\n");
+ 
+-  printf("[llama] ggml version: %s\n", ggml_version());
++  struct llama_model *model = load_embedded_model();
++  if (!model) {
++    printf("[llama] model load failed\n");
++    return 1;
++  }
++
++  const struct llama_vocab *vocab = llama_model_get_vocab(model);
++  char *prompt = format_chat_prompt(model);
++  if (!prompt) {
++    printf("[llama] chat template failed\n");
++    llama_model_free(model);
++    return 1;
++  }
++
++  llama_token *prompt_tokens = NULL;
++  int n_prompt = 0;
++  if (tokenize_prompt(vocab, prompt, &prompt_tokens, &n_prompt) != 0) {
++    printf("[llama] prompt tokenize failed\n");
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_context_params ctx_params = llama_context_default_params();
++  ctx_params.n_ctx = (uint32_t) (n_prompt + N_PREDICT);
++  ctx_params.n_batch = (uint32_t) n_prompt;
++  ctx_params.no_perf = true;
++
++  struct llama_context *ctx = llama_init_from_model(model, ctx_params);
++  if (!ctx) {
++    printf("[llama] context init failed\n");
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  struct llama_sampler *smpl =
++      llama_sampler_chain_init(llama_sampler_chain_default_params());
++  llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
++
++  printf("[llama] Prompt: %s\n", PROMPT_TEXT);
++  printf("[llama] Answer: ");
++
++  struct llama_batch batch = llama_batch_get_one(prompt_tokens, n_prompt);
++  if (llama_decode(ctx, batch) != 0) {
++    printf("\n[llama] prompt decode failed\n");
++    llama_sampler_free(smpl);
++    llama_free(ctx);
++    free(prompt_tokens);
++    free(prompt);
++    llama_model_free(model);
++    return 1;
++  }
++
++  for (int i = 0; i < N_PREDICT; ++i) {
++    llama_token token = llama_sampler_sample(smpl, ctx, -1);
++    if (llama_vocab_is_eog(vocab, token)) {
++      break;
++    }
++
++    char piece[256];
++    int n = llama_token_to_piece(vocab, token, piece, sizeof(piece), 0, true);
++    if (n < 0) {
++      printf("\n[llama] token to piece failed\n");
++      break;
++    }
++    fwrite(piece, 1, (size_t) n, stdout);
++    fflush(stdout);
++
++    batch = llama_batch_get_one(&token, 1);
++    if (llama_decode(ctx, batch) != 0) {
++      printf("\n[llama] decode failed\n");
++      break;
++    }
++  }
++
++  printf("\n");
++
++  llama_sampler_free(smpl);
++  llama_free(ctx);
++  free(prompt_tokens);
++  free(prompt);
++  llama_model_free(model);
+ 
+   sbi_puts("[llama] Done\n");
+   return 0;
+@@ -207,5 +478,5 @@ void _start(void) {
+   __libc_setup_tls();
+ 
+   int ret = main();
+-  sbi_exit_enclave(ret);
++  runtime_exit(ret);
+ }
+
+```
+
+### Delegate user ecalls to Eyrie runtime
+
+**Files:** `sm/src/enclave.c`
+**Date:** 2026-07-02 15:28
+
+**Reason:** TEE llama uses glibc Linux syscalls for file-backed GGUF loading; user-mode ecalls must reach Eyrie while runtime S-mode Keystone SBI calls still trap to the SM.
+
+```diff
+diff --git a/sm/src/enclave.c b/sm/src/enclave.c
+index ca638a1b7..b199a400e 100644
+--- a/sm/src/enclave.c
++++ b/sm/src/enclave.c
+@@ -10,6 +10,7 @@
+ #include "platform-hook.h"
+ #include <sbi/sbi_string.h>
+ #include <sbi/riscv_asm.h>
++#include <sbi/riscv_encoding.h>
+ #include <sbi/riscv_locks.h>
+ #include <sbi/sbi_console.h>
+ 
+@@ -53,10 +54,10 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
+ 
+   uintptr_t interrupts = 0;
+   csr_write(mideleg, interrupts);
+-  /* Keep ecalls in M-mode so legacy SBI (putchar) reaches SM directly.
+-   * Linux syscalls from __tls_init_tp (set_robust_list, getcpu) will
+-   * return -1 (ENOSYS) but glibc tolerates that. */
+-  csr_write(medeleg, 0);
++  /* Delegate U-mode ecalls to the Eyrie runtime for Linux syscall handling.
++   * Runtime S-mode ecalls remain in M-mode, so Keystone SBI calls still reach
++   * the security monitor instead of being re-trapped by the runtime. */
++  csr_write(medeleg, (1UL << CAUSE_USER_ECALL));
+ 
+   /* Always set FS=3 (float dirty) and VS=3 (vector dirty) on every
+    * enclave entry (both first run and resume), so vector instructions
+@@ -92,8 +93,7 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
+     csr_write(satp, enclaves[eid].encl_satp);
+   }
+ 
+-  /* Always restore enclave page table (needed on resume: swap_prev_smode_csrs
+-     can save the host's Sv48 SATP and restore it incorrectly for Sv39) */
++  /* Always restore enclave page table; resume may otherwise restore host SATP. */
+   csr_write(satp, enclaves[eid].encl_satp);
+ 
+   /* Disable M-mode timer interrupts while enclave runs */
+@@ -436,7 +436,7 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
+ #if __riscv_xlen == 32
+   enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV32 << HGATP_MODE_SHIFT));
+ #else
+-  enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV39 << HGATP_MODE_SHIFT));
++  enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV48 << HGATP_MODE_SHIFT));
+ #endif
+   enclaves[eid].n_thread = 0;
+   enclaves[eid].params = params;
+
+```
+
+### Merge old enclave page table into Sv48 runtime table
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-02 15:38
+
+**Reason:** After switching Eyrie to Sv48, root-level copy skipped old low-address mappings when the new runtime page table already had the same root entry; recursively merging preserves UTM mappings required by edge syscalls.
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 80f84ecef..13e3ccaaf 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -35,15 +35,17 @@ map_physical_memory(uintptr_t dram_base,
+   uintptr_t ptr = EYRIE_LOAD_START;
+   /* load address should not override kernel address */
+   assert(RISCV_GET_PT_INDEX(ptr, 1) != RISCV_GET_PT_INDEX(runtime_va_start, 1));
+-  map_with_reserved_page_table(dram_base, dram_size,
+-      ptr, load_l2_page_table, load_l3_page_table);
++  assert(dram_size <= EYRIE_LOAD_SIZE_MAX);
++
++  map_with_reserved_page_table(dram_base, dram_size, ptr,
++      load_l1_page_table, 0, 0);
+ }
+ 
+ void
+ remap_kernel_space(uintptr_t runtime_base,
+                    uintptr_t runtime_size)
+ {
+-  /* eyrie runtime is supposed to be smaller than a megapage */
++  /* eyrie runtime is mapped with reserved bootstrap page tables. */
+ 
+   #if __riscv_xlen == 64
+   assert(runtime_size <= RISCV_GET_LVL_PGSIZE(2));
+@@ -52,22 +54,55 @@ remap_kernel_space(uintptr_t runtime_base,
+   #endif 
+ 
+   map_with_reserved_page_table(runtime_base, runtime_size,
+-     runtime_va_start, kernel_l2_page_table, kernel_l3_page_table);
++     runtime_va_start, kernel_l1_page_table, kernel_l2_page_table,
++     kernel_l3_page_table);
+ }
+ 
++static int pte_is_leaf(pte entry);
++static pte* pte_to_va(pte entry);
++static void merge_page_table(pte* dst, pte* src, int level);
++
+ void
+ copy_root_page_table()
+ {
+   /* the old table lives in the first page */
+   pte* old_root_page_table = (pte*) EYRIE_LOAD_START;
+-  int i;
++  merge_page_table(root_page_table, old_root_page_table, RISCV_PT_LEVELS - 1);
++  __asm__ volatile("fence rw, rw\nsfence.vma" ::: "memory");
++}
++
++static int
++pte_is_leaf(pte entry)
++{
++  return entry & (PTE_R | PTE_W | PTE_X);
++}
+ 
+-  /* copy all valid entries of the old root page table */
+-  for (i = 0; i < BIT(RISCV_PT_INDEX_BITS); i++) {
+-    if (old_root_page_table[i] & PTE_V &&
+-        !(root_page_table[i] & PTE_V)) {
+-      root_page_table[i] = old_root_page_table[i];
++static pte*
++pte_to_va(pte entry)
++{
++  return (pte*) __va(pte_ppn(entry) << RISCV_PAGE_BITS);
++}
++
++static void
++merge_page_table(pte* dst, pte* src, int level)
++{
++  for (int i = 0; i < BIT(RISCV_PT_INDEX_BITS); i++) {
++    pte src_entry = src[i];
++    if (!(src_entry & PTE_V)) {
++      continue;
++    }
++
++    pte dst_entry = dst[i];
++    if (!(dst_entry & PTE_V)) {
++      dst[i] = src_entry;
++      continue;
+     }
++
++    if (level == 0 || pte_is_leaf(src_entry) || pte_is_leaf(dst_entry)) {
++      continue;
++    }
++
++    merge_page_table(pte_to_va(dst_entry), pte_to_va(src_entry), level - 1);
+   }
+ }
+ 
+
+```
+
+### Enable SUM for runtime shared-buffer access
+
+**Files:** `runtime/sys/boot.c`
+**Date:** 2026-07-02 15:48
+
+**Reason:** Eyrie syscall wrappers write UTM pages marked PTE_U; S-mode must set SR_SUM or edge syscall metadata writes fault before reaching the host.
+
+```diff
+diff --git a/runtime/sys/boot.c b/runtime/sys/boot.c
+index 80f84ecef..23de85fe6 100644
+--- a/runtime/sys/boot.c
++++ b/runtime/sys/boot.c
+@@ -35,15 +35,17 @@ map_physical_memory(uintptr_t dram_base,
+   uintptr_t ptr = EYRIE_LOAD_START;
+   /* load address should not override kernel address */
+   assert(RISCV_GET_PT_INDEX(ptr, 1) != RISCV_GET_PT_INDEX(runtime_va_start, 1));
+-  map_with_reserved_page_table(dram_base, dram_size,
+-      ptr, load_l2_page_table, load_l3_page_table);
++  assert(dram_size <= EYRIE_LOAD_SIZE_MAX);
++
++  map_with_reserved_page_table(dram_base, dram_size, ptr,
++      load_l1_page_table, 0, 0);
+ }
+ 
+ void
+ remap_kernel_space(uintptr_t runtime_base,
+                    uintptr_t runtime_size)
+ {
+-  /* eyrie runtime is supposed to be smaller than a megapage */
++  /* eyrie runtime is mapped with reserved bootstrap page tables. */
+ 
+   #if __riscv_xlen == 64
+   assert(runtime_size <= RISCV_GET_LVL_PGSIZE(2));
+@@ -52,22 +54,55 @@ remap_kernel_space(uintptr_t runtime_base,
+   #endif 
+ 
+   map_with_reserved_page_table(runtime_base, runtime_size,
+-     runtime_va_start, kernel_l2_page_table, kernel_l3_page_table);
++     runtime_va_start, kernel_l1_page_table, kernel_l2_page_table,
++     kernel_l3_page_table);
+ }
+ 
++static int pte_is_leaf(pte entry);
++static pte* pte_to_va(pte entry);
++static void merge_page_table(pte* dst, pte* src, int level);
++
+ void
+ copy_root_page_table()
+ {
+   /* the old table lives in the first page */
+   pte* old_root_page_table = (pte*) EYRIE_LOAD_START;
+-  int i;
++  merge_page_table(root_page_table, old_root_page_table, RISCV_PT_LEVELS - 1);
++  __asm__ volatile("fence rw, rw\nsfence.vma" ::: "memory");
++}
++
++static int
++pte_is_leaf(pte entry)
++{
++  return entry & (PTE_R | PTE_W | PTE_X);
++}
+ 
+-  /* copy all valid entries of the old root page table */
+-  for (i = 0; i < BIT(RISCV_PT_INDEX_BITS); i++) {
+-    if (old_root_page_table[i] & PTE_V &&
+-        !(root_page_table[i] & PTE_V)) {
+-      root_page_table[i] = old_root_page_table[i];
++static pte*
++pte_to_va(pte entry)
++{
++  return (pte*) __va(pte_ppn(entry) << RISCV_PAGE_BITS);
++}
++
++static void
++merge_page_table(pte* dst, pte* src, int level)
++{
++  for (int i = 0; i < BIT(RISCV_PT_INDEX_BITS); i++) {
++    pte src_entry = src[i];
++    if (!(src_entry & PTE_V)) {
++      continue;
++    }
++
++    pte dst_entry = dst[i];
++    if (!(dst_entry & PTE_V)) {
++      dst[i] = src_entry;
++      continue;
+     }
++
++    if (level == 0 || pte_is_leaf(src_entry) || pte_is_leaf(dst_entry)) {
++      continue;
++    }
++
++    merge_page_table(pte_to_va(dst_entry), pte_to_va(src_entry), level - 1);
+   }
+ }
+ 
+@@ -171,8 +206,8 @@ eyrie_boot(uintptr_t dummy, // $a0 contains the return value from the SBI
+   /* set timer */
+   init_timer();
+ 
+-  /* Enable the FPU */
+-  csr_write(sstatus, csr_read(sstatus) | 0x6000);
++  /* Enable FPU and allow S-mode runtime access to UTM/user mappings. */
++  csr_write(sstatus, csr_read(sstatus) | SR_FS | SR_SUM);
+ 
+   debug("eyrie boot finished. drop to the user land ...");
+   /* booting all finished, droping to the user land */
+
+```
+
+### Set SUM at runtime syscall entry
+
+**Files:** `runtime/call/syscall.c`
+**Date:** 2026-07-02 15:57
+
+**Reason:** U-mode traps may not preserve boot-time SUM, so Eyrie must enable SR_SUM before syscall wrappers write UTM shared-buffer pages marked PTE_U.
+
+```diff
+diff --git a/runtime/call/syscall.c b/runtime/call/syscall.c
+index fe7360d26..0867d323b 100644
+--- a/runtime/call/syscall.c
++++ b/runtime/call/syscall.c
+@@ -5,6 +5,7 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <sys/select.h>
++#include <asm/csr.h>
+ #include "call/syscall.h"
+ #include "util/string.h"
+ #include "edge_call.h"
+@@ -46,20 +47,30 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
+   ret = sbi_stop_enclave(1);
+ 
+   if (ret != 0) {
++    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
++           ret, (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(edge_call->return_data.call_status != CALL_STATUS_OK){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
++           edge_call->return_data.call_status,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   uintptr_t return_ptr;
+   size_t return_len;
+   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(return_len < sizeof(uintptr_t)){
++    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
++           (unsigned long) return_len,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+@@ -149,6 +160,8 @@ void init_edge_internals(){
+ 
+ void handle_syscall(struct encl_ctx* ctx)
+ {
++  csr_set(sstatus, SR_SUM);
++
+   uintptr_t n = ctx->regs.a7;
+   uintptr_t arg0 = ctx->regs.a0;
+   uintptr_t arg1 = ctx->regs.a1;
+
+```
+
+### Restore SUM after edge syscall resume
+
+**Files:** `runtime/call/syscall.c`
+**Date:** 2026-07-02 16:06
+
+**Reason:** SM resume can restore runtime SSTATUS without SR_SUM; Eyrie must re-enable SUM before reading host-written UTM return metadata.
+
+```diff
+diff --git a/runtime/call/syscall.c b/runtime/call/syscall.c
+index fe7360d26..e9a4adac3 100644
+--- a/runtime/call/syscall.c
++++ b/runtime/call/syscall.c
+@@ -5,6 +5,7 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <sys/select.h>
++#include <asm/csr.h>
+ #include "call/syscall.h"
+ #include "util/string.h"
+ #include "edge_call.h"
+@@ -44,22 +45,33 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
+   }
+ 
+   ret = sbi_stop_enclave(1);
++  csr_set(sstatus, SR_SUM);
+ 
+   if (ret != 0) {
++    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
++           ret, (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(edge_call->return_data.call_status != CALL_STATUS_OK){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
++           edge_call->return_data.call_status,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   uintptr_t return_ptr;
+   size_t return_len;
+   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(return_len < sizeof(uintptr_t)){
++    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
++           (unsigned long) return_len,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+@@ -149,6 +161,8 @@ void init_edge_internals(){
+ 
+ void handle_syscall(struct encl_ctx* ctx)
+ {
++  csr_set(sstatus, SR_SUM);
++
+   uintptr_t n = ctx->regs.a7;
+   uintptr_t arg0 = ctx->regs.a0;
+   uintptr_t arg1 = ctx->regs.a1;
+
+```
+
+### Trace enclave edge-call dispatch
+
+**Files:** `sdk/src/host/Enclave.cpp`
+**Date:** 2026-07-02 16:21
+
+**Reason:** Llama enclave reaches Eyrie syscall proxying but host syscall dispatch appears not to run; log run/resume yield state before changing behavior.
+
+```diff
+diff --git a/sdk/src/host/Enclave.cpp b/sdk/src/host/Enclave.cpp
+index a2f481c9d..f733e29f7 100644
+--- a/sdk/src/host/Enclave.cpp
++++ b/sdk/src/host/Enclave.cpp
+@@ -27,8 +27,14 @@ Enclave::Enclave() {
+ }
+ 
+ Enclave::~Enclave() {
+-  if (runtimeFile) delete runtimeFile;
+-  if (enclaveFile) delete enclaveFile;
++  if (runtimeFile) {
++    delete runtimeFile;
++    runtimeFile = NULL;
++  }
++  if (enclaveFile) {
++    delete enclaveFile;
++    enclaveFile = NULL;
++  }
+   destroy();
+ }
+ 
+@@ -44,7 +50,6 @@ fep_flags_to_mode(uint32_t flags) {
+ 
+ Error
+ Enclave::loadFlatEnclave(const char* pkgpath) {
+-  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
+   FILE* fp = fopen(pkgpath, "rb");
+   if (!fp) {
+     ERROR("cannot open flat package: %s", pkgpath);
+@@ -61,9 +66,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     return Error::FileInitFailure;
+   }
+ 
+-  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
+-          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
+-
+   /* Read segment table */
+   FepSegment* segs = new FepSegment[hdr.num_segs];
+   if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
+@@ -74,7 +76,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+   }
+ 
+   /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
+-  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
+   for (uint32_t i = 0; i < hdr.num_segs; i++) {
+     FepSegment* seg = &segs[i];
+     if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
+@@ -85,7 +86,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+       return Error::VSpaceAllocationFailure;
+     }
+   }
+-  fprintf(stderr, "[FEP] pass2: loading pages\n");
+ 
+   /* Pass 2: load runtime segments (!U bit) with physical pages */
+   for (uint32_t pass = 0; pass < 2; pass++) {
+@@ -93,10 +93,8 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+ 
+     /* snapshot epmFreeList BEFORE allocating physical pages */
+     if (loading_runtime) {
+-      fprintf(stderr, "[FEP] loading runtime pages\n");
+       pMemory->startRuntimeMem();
+     } else {
+-      fprintf(stderr, "[FEP] loading eapp pages\n");
+       pMemory->startEappMem();
+     }
+ 
+@@ -140,8 +138,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     }
+   }
+ 
+-  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
+-
+   flat_rt_entry   = hdr.rt_entry;
+   flat_user_entry = hdr.user_entry;
+ 
+@@ -439,7 +435,7 @@ Enclave::init(
+     fclose(fp);
+     uintptr_t minPages = total_va_pages
+                          + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
+-                         + 65536; /* 256 MB extra for runtime safety */
++                         + 65536; /* 256 MB extra for runtime metadata/page tables */
+     if (pDevice->create(minPages) != Error::Success) {
+       destroy();
+       return Error::DeviceError;
+@@ -587,6 +583,11 @@ Enclave::destroy() {
+     runtimeFile = NULL;
+   }
+ 
++  if (pMemory) {
++    delete pMemory;
++    pMemory = NULL;
++  }
++
+   if (!pDevice) return Error::Success;
+   return pDevice->destroy();
+ }
+@@ -604,8 +605,10 @@ Enclave::run(uintptr_t* retval) {
+ 
+   Error ret = pDevice->run(retval);
+   while (ret == Error::EdgeCallHost || ret == Error::EnclaveInterrupted) {
++    printf("[host-debug] enclave yielded ret=%d\n", (int)ret);
+     /* enclave is stopped in the middle. */
+     if (ret == Error::EdgeCallHost && oFuncDispatch != NULL) {
++      printf("[host-debug] dispatching edge call\n");
+       oFuncDispatch(getSharedBuffer());
+     }
+     ret = pDevice->resume(retval);
+
+```
+
+### Trace host edge-call ids
+
+**Files:** `sdk/src/edge/edge_dispatch.c`
+**Date:** 2026-07-02 16:21
+
+**Reason:** Differentiate missing EdgeCallHost delivery from syscall return marshalling issues while debugging llama model file staging in the enclave.
+
+```diff
+diff --git a/sdk/src/edge/edge_dispatch.c b/sdk/src/edge/edge_dispatch.c
+index 365b4eb62..6a5024f9b 100644
+--- a/sdk/src/edge/edge_dispatch.c
++++ b/sdk/src/edge/edge_dispatch.c
+@@ -3,6 +3,7 @@
+ // All Rights Reserved. See LICENSE for license details.
+ //------------------------------------------------------------------------------
+ #include "edge_call.h"
++#include <stdio.h>
+ 
+ #ifdef IO_SYSCALL_WRAPPING
+ #include "edge_syscall.h"
+@@ -14,10 +15,12 @@ edgecallwrapper edge_call_table[MAX_EDGE_CALL];
+ void
+ incoming_call_dispatch(void* buffer) {
+   struct edge_call* edge_call = (struct edge_call*)buffer;
++  printf("[host-edge] dispatch call_id=%lu\n", edge_call->call_id);
+ 
+ #ifdef IO_SYSCALL_WRAPPING
+   /* If its a syscall handle it specially */
+   if (edge_call->call_id == EDGECALL_SYSCALL) {
++    printf("[host-edge] dispatch syscall\n");
+     incoming_syscall(buffer);
+     return;
+   }
+
+```
+
+### Fence shared syscall buffer around host stops
+
+**Files:** `runtime/call/syscall.c`
+**Date:** 2026-07-02 16:30
+
+**Reason:** NEMU/Xiangshan can expose stale shared-buffer contents to the host; llama syscall proxying reached EdgeCallHost but host saw call_id=0 instead of EDGECALL_SYSCALL.
+
+```diff
+diff --git a/runtime/call/syscall.c b/runtime/call/syscall.c
+index fe7360d26..bf93b4f29 100644
+--- a/runtime/call/syscall.c
++++ b/runtime/call/syscall.c
+@@ -5,6 +5,7 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <sys/select.h>
++#include <asm/csr.h>
+ #include "call/syscall.h"
+ #include "util/string.h"
+ #include "edge_call.h"
+@@ -43,23 +44,36 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
+     return -1;
+   }
+ 
++  __asm__ volatile("fence rw, rw" ::: "memory");
+   ret = sbi_stop_enclave(1);
++  __asm__ volatile("fence rw, rw" ::: "memory");
++  csr_set(sstatus, SR_SUM);
+ 
+   if (ret != 0) {
++    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
++           ret, (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(edge_call->return_data.call_status != CALL_STATUS_OK){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
++           edge_call->return_data.call_status,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   uintptr_t return_ptr;
+   size_t return_len;
+   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(return_len < sizeof(uintptr_t)){
++    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
++           (unsigned long) return_len,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+@@ -92,7 +106,9 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
+     goto ocall_error;
+   }
+ 
++  __asm__ volatile("fence rw, rw" ::: "memory");
+   ret = sbi_stop_enclave(1);
++  __asm__ volatile("fence rw, rw" ::: "memory");
+ 
+   if (ret != 0) {
+     goto ocall_error;
+@@ -149,6 +165,8 @@ void init_edge_internals(){
+ 
+ void handle_syscall(struct encl_ctx* ctx)
+ {
++  csr_set(sstatus, SR_SUM);
++
+   uintptr_t n = ctx->regs.a7;
+   uintptr_t arg0 = ctx->regs.a0;
+   uintptr_t arg1 = ctx->regs.a1;
+
+```
+
+### Fence host edge-call returns before resume
+
+**Files:** `sdk/src/host/Enclave.cpp`
+**Date:** 2026-07-02 16:30
+
+**Reason:** Ensure host writes to the shared edge-call return area are visible before resuming the enclave on Xiangshan/NEMU.
+
+```diff
+diff --git a/sdk/src/host/Enclave.cpp b/sdk/src/host/Enclave.cpp
+index a2f481c9d..8d16d7d07 100644
+--- a/sdk/src/host/Enclave.cpp
++++ b/sdk/src/host/Enclave.cpp
+@@ -27,8 +27,14 @@ Enclave::Enclave() {
+ }
+ 
+ Enclave::~Enclave() {
+-  if (runtimeFile) delete runtimeFile;
+-  if (enclaveFile) delete enclaveFile;
++  if (runtimeFile) {
++    delete runtimeFile;
++    runtimeFile = NULL;
++  }
++  if (enclaveFile) {
++    delete enclaveFile;
++    enclaveFile = NULL;
++  }
+   destroy();
+ }
+ 
+@@ -44,7 +50,6 @@ fep_flags_to_mode(uint32_t flags) {
+ 
+ Error
+ Enclave::loadFlatEnclave(const char* pkgpath) {
+-  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
+   FILE* fp = fopen(pkgpath, "rb");
+   if (!fp) {
+     ERROR("cannot open flat package: %s", pkgpath);
+@@ -61,9 +66,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     return Error::FileInitFailure;
+   }
+ 
+-  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
+-          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
+-
+   /* Read segment table */
+   FepSegment* segs = new FepSegment[hdr.num_segs];
+   if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
+@@ -74,7 +76,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+   }
+ 
+   /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
+-  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
+   for (uint32_t i = 0; i < hdr.num_segs; i++) {
+     FepSegment* seg = &segs[i];
+     if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
+@@ -85,7 +86,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+       return Error::VSpaceAllocationFailure;
+     }
+   }
+-  fprintf(stderr, "[FEP] pass2: loading pages\n");
+ 
+   /* Pass 2: load runtime segments (!U bit) with physical pages */
+   for (uint32_t pass = 0; pass < 2; pass++) {
+@@ -93,10 +93,8 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+ 
+     /* snapshot epmFreeList BEFORE allocating physical pages */
+     if (loading_runtime) {
+-      fprintf(stderr, "[FEP] loading runtime pages\n");
+       pMemory->startRuntimeMem();
+     } else {
+-      fprintf(stderr, "[FEP] loading eapp pages\n");
+       pMemory->startEappMem();
+     }
+ 
+@@ -140,8 +138,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     }
+   }
+ 
+-  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
+-
+   flat_rt_entry   = hdr.rt_entry;
+   flat_user_entry = hdr.user_entry;
+ 
+@@ -439,7 +435,7 @@ Enclave::init(
+     fclose(fp);
+     uintptr_t minPages = total_va_pages
+                          + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
+-                         + 65536; /* 256 MB extra for runtime safety */
++                         + 65536; /* 256 MB extra for runtime metadata/page tables */
+     if (pDevice->create(minPages) != Error::Success) {
+       destroy();
+       return Error::DeviceError;
+@@ -587,6 +583,11 @@ Enclave::destroy() {
+     runtimeFile = NULL;
+   }
+ 
++  if (pMemory) {
++    delete pMemory;
++    pMemory = NULL;
++  }
++
+   if (!pDevice) return Error::Success;
+   return pDevice->destroy();
+ }
+@@ -604,9 +605,12 @@ Enclave::run(uintptr_t* retval) {
+ 
+   Error ret = pDevice->run(retval);
+   while (ret == Error::EdgeCallHost || ret == Error::EnclaveInterrupted) {
++    printf("[host-debug] enclave yielded ret=%d\n", (int)ret);
+     /* enclave is stopped in the middle. */
+     if (ret == Error::EdgeCallHost && oFuncDispatch != NULL) {
++      printf("[host-debug] dispatching edge call\n");
+       oFuncDispatch(getSharedBuffer());
++      asm volatile("fence rw, rw" ::: "memory");
+     }
+     ret = pDevice->resume(retval);
+   }
+
+```
+
+### Trace syscall edge header bytes
+
+**Files:** `runtime/call/syscall.c`
+**Date:** 2026-07-02 16:37
+
+**Reason:** Need to verify whether the enclave writes EDGECALL_SYSCALL into shared memory before stopping, since host currently sees call_id=0.
+
+```diff
+diff --git a/runtime/call/syscall.c b/runtime/call/syscall.c
+index fe7360d26..23008d4a8 100644
+--- a/runtime/call/syscall.c
++++ b/runtime/call/syscall.c
+@@ -5,6 +5,7 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <sys/select.h>
++#include <asm/csr.h>
+ #include "call/syscall.h"
+ #include "util/string.h"
+ #include "edge_call.h"
+@@ -43,23 +44,39 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
+     return -1;
+   }
+ 
++  printf("[runtime-debug] syscall edge header call_id=%lu arg_off=%lu arg_size=%lu\n",
++         edge_call->call_id, (unsigned long) edge_call->call_arg_offset,
++         (unsigned long) edge_call->call_arg_size);
++  __asm__ volatile("fence rw, rw" ::: "memory");
+   ret = sbi_stop_enclave(1);
++  __asm__ volatile("fence rw, rw" ::: "memory");
++  csr_set(sstatus, SR_SUM);
+ 
+   if (ret != 0) {
++    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
++           ret, (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(edge_call->return_data.call_status != CALL_STATUS_OK){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
++           edge_call->return_data.call_status,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   uintptr_t return_ptr;
+   size_t return_len;
+   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(return_len < sizeof(uintptr_t)){
++    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
++           (unsigned long) return_len,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+@@ -92,7 +109,9 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
+     goto ocall_error;
+   }
+ 
++  __asm__ volatile("fence rw, rw" ::: "memory");
+   ret = sbi_stop_enclave(1);
++  __asm__ volatile("fence rw, rw" ::: "memory");
+ 
+   if (ret != 0) {
+     goto ocall_error;
+@@ -149,6 +168,8 @@ void init_edge_internals(){
+ 
+ void handle_syscall(struct encl_ctx* ctx)
+ {
++  csr_set(sstatus, SR_SUM);
++
+   uintptr_t n = ctx->regs.a7;
+   uintptr_t arg0 = ctx->regs.a0;
+   uintptr_t arg1 = ctx->regs.a1;
+
+```
+
+### Trace host edge-call header bytes
+
+**Files:** `sdk/src/edge/edge_dispatch.c`
+**Date:** 2026-07-02 16:37
+
+**Reason:** Need byte-level confirmation of the shared edge-call header to separate visibility bugs from dispatcher logic bugs.
+
+```diff
+diff --git a/sdk/src/edge/edge_dispatch.c b/sdk/src/edge/edge_dispatch.c
+index 365b4eb62..95eb5c1ce 100644
+--- a/sdk/src/edge/edge_dispatch.c
++++ b/sdk/src/edge/edge_dispatch.c
+@@ -3,6 +3,7 @@
+ // All Rights Reserved. See LICENSE for license details.
+ //------------------------------------------------------------------------------
+ #include "edge_call.h"
++#include <stdio.h>
+ 
+ #ifdef IO_SYSCALL_WRAPPING
+ #include "edge_syscall.h"
+@@ -14,10 +15,17 @@ edgecallwrapper edge_call_table[MAX_EDGE_CALL];
+ void
+ incoming_call_dispatch(void* buffer) {
+   struct edge_call* edge_call = (struct edge_call*)buffer;
++  printf("[host-edge] dispatch call_id=%lu\n", edge_call->call_id);
++  printf("[host-edge] edge header call_id=%lu arg_off=%lu arg_size=%lu ret_off=%lu ret_size=%lu\n",
++         edge_call->call_id, (unsigned long) edge_call->call_arg_offset,
++         (unsigned long) edge_call->call_arg_size,
++         (unsigned long) edge_call->return_data.call_ret_offset,
++         (unsigned long) edge_call->return_data.call_ret_size);
+ 
+ #ifdef IO_SYSCALL_WRAPPING
+   /* If its a syscall handle it specially */
+   if (edge_call->call_id == EDGECALL_SYSCALL) {
++    printf("[host-edge] dispatch syscall\n");
+     incoming_syscall(buffer);
+     return;
+   }
+
+```
+
+### Trace shared buffer bytes before host dispatch
+
+**Files:** `sdk/src/host/Enclave.cpp`
+**Date:** 2026-07-02 16:37
+
+**Reason:** Dump the first bytes of the mapped UTM buffer before the host callback to verify shared-memory visibility across the stop/resume boundary.
+
+```diff
+diff --git a/sdk/src/host/Enclave.cpp b/sdk/src/host/Enclave.cpp
+index a2f481c9d..8bb01bd3b 100644
+--- a/sdk/src/host/Enclave.cpp
++++ b/sdk/src/host/Enclave.cpp
+@@ -27,8 +27,14 @@ Enclave::Enclave() {
+ }
+ 
+ Enclave::~Enclave() {
+-  if (runtimeFile) delete runtimeFile;
+-  if (enclaveFile) delete enclaveFile;
++  if (runtimeFile) {
++    delete runtimeFile;
++    runtimeFile = NULL;
++  }
++  if (enclaveFile) {
++    delete enclaveFile;
++    enclaveFile = NULL;
++  }
+   destroy();
+ }
+ 
+@@ -44,7 +50,6 @@ fep_flags_to_mode(uint32_t flags) {
+ 
+ Error
+ Enclave::loadFlatEnclave(const char* pkgpath) {
+-  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
+   FILE* fp = fopen(pkgpath, "rb");
+   if (!fp) {
+     ERROR("cannot open flat package: %s", pkgpath);
+@@ -61,9 +66,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     return Error::FileInitFailure;
+   }
+ 
+-  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
+-          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
+-
+   /* Read segment table */
+   FepSegment* segs = new FepSegment[hdr.num_segs];
+   if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
+@@ -74,7 +76,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+   }
+ 
+   /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
+-  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
+   for (uint32_t i = 0; i < hdr.num_segs; i++) {
+     FepSegment* seg = &segs[i];
+     if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
+@@ -85,7 +86,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+       return Error::VSpaceAllocationFailure;
+     }
+   }
+-  fprintf(stderr, "[FEP] pass2: loading pages\n");
+ 
+   /* Pass 2: load runtime segments (!U bit) with physical pages */
+   for (uint32_t pass = 0; pass < 2; pass++) {
+@@ -93,10 +93,8 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+ 
+     /* snapshot epmFreeList BEFORE allocating physical pages */
+     if (loading_runtime) {
+-      fprintf(stderr, "[FEP] loading runtime pages\n");
+       pMemory->startRuntimeMem();
+     } else {
+-      fprintf(stderr, "[FEP] loading eapp pages\n");
+       pMemory->startEappMem();
+     }
+ 
+@@ -140,8 +138,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
+     }
+   }
+ 
+-  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
+-
+   flat_rt_entry   = hdr.rt_entry;
+   flat_user_entry = hdr.user_entry;
+ 
+@@ -439,7 +435,7 @@ Enclave::init(
+     fclose(fp);
+     uintptr_t minPages = total_va_pages
+                          + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
+-                         + 65536; /* 256 MB extra for runtime safety */
++                         + 65536; /* 256 MB extra for runtime metadata/page tables */
+     if (pDevice->create(minPages) != Error::Success) {
+       destroy();
+       return Error::DeviceError;
+@@ -587,6 +583,11 @@ Enclave::destroy() {
+     runtimeFile = NULL;
+   }
+ 
++  if (pMemory) {
++    delete pMemory;
++    pMemory = NULL;
++  }
++
+   if (!pDevice) return Error::Success;
+   return pDevice->destroy();
+ }
+@@ -604,9 +605,18 @@ Enclave::run(uintptr_t* retval) {
+ 
+   Error ret = pDevice->run(retval);
+   while (ret == Error::EdgeCallHost || ret == Error::EnclaveInterrupted) {
++    printf("[host-debug] enclave yielded ret=%d\n", (int)ret);
+     /* enclave is stopped in the middle. */
+     if (ret == Error::EdgeCallHost && oFuncDispatch != NULL) {
++      printf("[host-debug] dispatching edge call\n");
++      auto* bytes = reinterpret_cast<unsigned char*>(getSharedBuffer());
++      printf("[host-debug] shared bytes:");
++      for (int i = 0; i < 16; ++i) {
++        printf(" %02x", bytes[i]);
++      }
++      printf("\n");
+       oFuncDispatch(getSharedBuffer());
++      asm volatile("fence rw, rw" ::: "memory");
+     }
+     ret = pDevice->resume(retval);
+   }
+
+```
+
+### Keep SUM enabled across edge-call marshalling
+
+**Files:** `runtime/call/syscall.c`
+**Date:** 2026-07-02 16:46
+
+**Reason:** ALLOW_USER_ACCESS clears SR_SUM after strlen; edge-call setup still touches UTM/shared buffer, which caused a page fault at 0x41000000.
+
+```diff
+diff --git a/runtime/call/syscall.c b/runtime/call/syscall.c
+index fe7360d26..385a21d0d 100644
+--- a/runtime/call/syscall.c
++++ b/runtime/call/syscall.c
+@@ -5,6 +5,7 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <sys/select.h>
++#include <asm/csr.h>
+ #include "call/syscall.h"
+ #include "util/string.h"
+ #include "edge_call.h"
+@@ -31,6 +32,7 @@ extern void exit_enclave(uintptr_t arg0);
+ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_t data_len){
+   int ret;
+ 
++  csr_set(sstatus, SR_SUM);
+   // Syscall data should already be at the edge_call_data section
+   /* For now we assume by convention that the start of the buffer is
+    * the right place to put calls */
+@@ -43,23 +45,39 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
+     return -1;
+   }
+ 
++  printf("[runtime-debug] syscall edge header call_id=%lu arg_off=%lu arg_size=%lu\n",
++         edge_call->call_id, (unsigned long) edge_call->call_arg_offset,
++         (unsigned long) edge_call->call_arg_size);
++  __asm__ volatile("fence rw, rw" ::: "memory");
+   ret = sbi_stop_enclave(1);
++  __asm__ volatile("fence rw, rw" ::: "memory");
++  csr_set(sstatus, SR_SUM);
+ 
+   if (ret != 0) {
++    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
++           ret, (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(edge_call->return_data.call_status != CALL_STATUS_OK){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
++           edge_call->return_data.call_status,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   uintptr_t return_ptr;
+   size_t return_len;
+   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
++    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+   if(return_len < sizeof(uintptr_t)){
++    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
++           (unsigned long) return_len,
++           (unsigned long) syscall_data_ptr->syscall_num);
+     return -1;
+   }
+ 
+@@ -71,6 +89,7 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
+ 				   void* return_buffer, size_t return_len){
+ 
+   uintptr_t ret;
++  csr_set(sstatus, SR_SUM);
+   /* For now we assume by convention that the start of the buffer is
+    * the right place to put calls */
+   struct edge_call* edge_call = (struct edge_call*)shared_buffer;
+@@ -92,7 +111,9 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
+     goto ocall_error;
+   }
+ 
++  __asm__ volatile("fence rw, rw" ::: "memory");
+   ret = sbi_stop_enclave(1);
++  __asm__ volatile("fence rw, rw" ::: "memory");
+ 
+   if (ret != 0) {
+     goto ocall_error;
+@@ -149,6 +170,8 @@ void init_edge_internals(){
+ 
+ void handle_syscall(struct encl_ctx* ctx)
+ {
++  csr_set(sstatus, SR_SUM);
++
+   uintptr_t n = ctx->regs.a7;
+   uintptr_t arg0 = ctx->regs.a0;
+   uintptr_t arg1 = ctx->regs.a1;
+
+```

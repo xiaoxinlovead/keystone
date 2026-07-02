@@ -10,6 +10,7 @@
 #include "platform-hook.h"
 #include <sbi/sbi_string.h>
 #include <sbi/riscv_asm.h>
+#include <sbi/riscv_encoding.h>
 #include <sbi/riscv_locks.h>
 #include <sbi/sbi_console.h>
 
@@ -53,10 +54,10 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
 
   uintptr_t interrupts = 0;
   csr_write(mideleg, interrupts);
-  /* Keep ecalls in M-mode so legacy SBI (putchar) reaches SM directly.
-   * Linux syscalls from __tls_init_tp (set_robust_list, getcpu) will
-   * return -1 (ENOSYS) but glibc tolerates that. */
-  csr_write(medeleg, 0);
+  /* Delegate U-mode ecalls to the Eyrie runtime for Linux syscall handling.
+   * Runtime S-mode ecalls remain in M-mode, so Keystone SBI calls still reach
+   * the security monitor instead of being re-trapped by the runtime. */
+  csr_write(medeleg, (1UL << CAUSE_USER_ECALL));
 
   /* Always set FS=3 (float dirty) and VS=3 (vector dirty) on every
    * enclave entry (both first run and resume), so vector instructions
@@ -92,8 +93,7 @@ static inline void context_switch_to_enclave(struct sbi_trap_regs* regs,
     csr_write(satp, enclaves[eid].encl_satp);
   }
 
-  /* Always restore enclave page table (needed on resume: swap_prev_smode_csrs
-     can save the host's Sv48 SATP and restore it incorrectly for Sv39) */
+  /* Always restore enclave page table; resume may otherwise restore host SATP. */
   csr_write(satp, enclaves[eid].encl_satp);
 
   /* Disable M-mode timer interrupts while enclave runs */
@@ -436,7 +436,7 @@ unsigned long create_enclave(unsigned long *eidptr, struct keystone_sbi_create c
 #if __riscv_xlen == 32
   enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV32 << HGATP_MODE_SHIFT));
 #else
-  enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV39 << HGATP_MODE_SHIFT));
+  enclaves[eid].encl_satp = ((base >> RISCV_PGSHIFT) | (SATP_MODE_SV48 << HGATP_MODE_SHIFT));
 #endif
   enclaves[eid].n_thread = 0;
   enclaves[eid].params = params;

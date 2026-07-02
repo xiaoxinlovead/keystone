@@ -3,6 +3,7 @@
 // All Rights Reserved. See LICENSE for license details.
 //------------------------------------------------------------------------------
 #include "edge_call.h"
+#include <stdio.h>
 
 #ifdef IO_SYSCALL_WRAPPING
 #include "edge_syscall.h"
@@ -14,10 +15,17 @@ edgecallwrapper edge_call_table[MAX_EDGE_CALL];
 void
 incoming_call_dispatch(void* buffer) {
   struct edge_call* edge_call = (struct edge_call*)buffer;
+  printf("[host-edge] dispatch call_id=%lu\n", edge_call->call_id);
+  printf("[host-edge] edge header call_id=%lu arg_off=%lu arg_size=%lu ret_off=%lu ret_size=%lu\n",
+         edge_call->call_id, (unsigned long) edge_call->call_arg_offset,
+         (unsigned long) edge_call->call_arg_size,
+         (unsigned long) edge_call->return_data.call_ret_offset,
+         (unsigned long) edge_call->return_data.call_ret_size);
 
 #ifdef IO_SYSCALL_WRAPPING
   /* If its a syscall handle it specially */
   if (edge_call->call_id == EDGECALL_SYSCALL) {
+    printf("[host-edge] dispatch syscall\n");
     incoming_syscall(buffer);
     return;
   }

@@ -59,7 +59,7 @@ struct enclave* create_enclave(unsigned long min_pages)
 {
   struct enclave* enclave;
 
-  enclave = kmalloc(sizeof(struct enclave), GFP_KERNEL);
+  enclave = kzalloc(sizeof(struct enclave), GFP_KERNEL);
   if (!enclave){
     keystone_err("failed to allocate enclave struct\n");
     goto error_no_free;
@@ -69,7 +69,7 @@ struct enclave* create_enclave(unsigned long min_pages)
   enclave->utm = NULL;
   enclave->close_on_pexit = 1;
 
-  enclave->epm = kmalloc(sizeof(struct epm), GFP_KERNEL);
+  enclave->epm = kzalloc(sizeof(struct epm), GFP_KERNEL);
   enclave->is_init = true;
   if (!enclave->epm)
   {

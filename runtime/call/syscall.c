@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/select.h>
+#include <asm/csr.h>
 #include "call/syscall.h"
 #include "util/string.h"
 #include "edge_call.h"
@@ -31,6 +32,7 @@ extern void exit_enclave(uintptr_t arg0);
 uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_t data_len){
   int ret;
 
+  csr_set(sstatus, SR_SUM);
   // Syscall data should already be at the edge_call_data section
   /* For now we assume by convention that the start of the buffer is
    * the right place to put calls */
@@ -43,23 +45,39 @@ uintptr_t dispatch_edgecall_syscall(struct edge_syscall* syscall_data_ptr, size_
     return -1;
   }
 
+  printf("[runtime-debug] syscall edge header call_id=%lu arg_off=%lu arg_size=%lu\n",
+         edge_call->call_id, (unsigned long) edge_call->call_arg_offset,
+         (unsigned long) edge_call->call_arg_size);
+  __asm__ volatile("fence rw, rw" ::: "memory");
   ret = sbi_stop_enclave(1);
+  __asm__ volatile("fence rw, rw" ::: "memory");
+  csr_set(sstatus, SR_SUM);
 
   if (ret != 0) {
+    printf("[runtime-debug] dispatch_edgecall_syscall sbi_stop_enclave failed ret=%d syscall=%lu\n",
+           ret, (unsigned long) syscall_data_ptr->syscall_num);
     return -1;
   }
 
   if(edge_call->return_data.call_status != CALL_STATUS_OK){
+    printf("[runtime-debug] dispatch_edgecall_syscall bad call_status=%lu syscall=%lu\n",
+           edge_call->return_data.call_status,
+           (unsigned long) syscall_data_ptr->syscall_num);
     return -1;
   }
 
   uintptr_t return_ptr;
   size_t return_len;
   if(edge_call_ret_ptr(edge_call, &return_ptr, &return_len) != 0){
+    printf("[runtime-debug] dispatch_edgecall_syscall bad ret ptr syscall=%lu\n",
+           (unsigned long) syscall_data_ptr->syscall_num);
     return -1;
   }
 
   if(return_len < sizeof(uintptr_t)){
+    printf("[runtime-debug] dispatch_edgecall_syscall short ret len=%lu syscall=%lu\n",
+           (unsigned long) return_len,
+           (unsigned long) syscall_data_ptr->syscall_num);
     return -1;
   }
 
@@ -71,6 +89,7 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
 				   void* return_buffer, size_t return_len){
 
   uintptr_t ret;
+  csr_set(sstatus, SR_SUM);
   /* For now we assume by convention that the start of the buffer is
    * the right place to put calls */
   struct edge_call* edge_call = (struct edge_call*)shared_buffer;
@@ -92,7 +111,9 @@ uintptr_t dispatch_edgecall_ocall( unsigned long call_id,
     goto ocall_error;
   }
 
+  __asm__ volatile("fence rw, rw" ::: "memory");
   ret = sbi_stop_enclave(1);
+  __asm__ volatile("fence rw, rw" ::: "memory");
 
   if (ret != 0) {
     goto ocall_error;
@@ -149,6 +170,8 @@ void init_edge_internals(){
 
 void handle_syscall(struct encl_ctx* ctx)
 {
+  csr_set(sstatus, SR_SUM);
+
   uintptr_t n = ctx->regs.a7;
   uintptr_t arg0 = ctx->regs.a0;
   uintptr_t arg1 = ctx->regs.a1;

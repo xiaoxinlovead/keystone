@@ -9,10 +9,18 @@
 namespace Keystone {
 
 Memory::Memory() {
+  pDevice       = 0;
+  epmSize       = 0;
   epmFreeList   = 0;
   utmFreeList   = 0;
   rootPageTable = 0;
   startAddr     = 0;
+  runtimePhysAddr = 0;
+  eappPhysAddr  = 0;
+  freePhysAddr  = 0;
+  utmPhysAddr   = 0;
+  untrustedPtr  = 0;
+  untrustedSize = 0;
 }
 
 void
@@ -62,6 +70,8 @@ Memory::allocPage(uintptr_t va, uintptr_t src, unsigned int mode) {
   uintptr_t* pFreeList = (mode == UTM_FULL ? &utmFreeList : &epmFreeList);
 
   pte* pte = __ept_walk_create(va);
+  if (!pte)
+    return false;
 
   /* if the page has been already allocated, return the page */
   if (pte_val(*pte) & PTE_V) {
@@ -117,35 +127,45 @@ Memory::__ept_continue_walk_create(uintptr_t addr, pte* ptePtr) {
   /* Intermediate PTEs must NOT have U bit (reserved per spec) */
   *ptePtr = ptd_create(free_ppn);
   epmFreeList += PAGE_SIZE;
-  if (addr == 0x41000000) {
-    static int _count = 0; _count++;
-    fprintf(stderr, "[HOST_CWC%d] epmFL=0x%lx free_ppn=%lu pteVal=0x%lx ptePtr[0]=0x%lx\n",
-            _count, (unsigned long)epmFreeList, (unsigned long)free_ppn,
-            (unsigned long)pte_val(*ptePtr),
-            (unsigned long)ptePtr[0].pte);
-    fflush(stderr);
-  }
   return __ept_walk_create(addr);
 }
 
 pte*
 Memory::__ept_walk_internal(uintptr_t addr, int create) {
   pte* t = reinterpret_cast<pte*>(rootPageTable);
+  uintptr_t epm_map_start = rootPageTable;
+  uintptr_t epm_map_end = rootPageTable + epmSize;
 
   int i;
   for (i = (VA_BITS - RISCV_PGSHIFT) / RISCV_PGLEVEL_BITS - 1; i > 0; i--) {
-    size_t idx = pt_idx(addr, i);
-    if (addr == 0x41000000 && i == 1) {
-      fprintf(stderr, "[WALK_DBG] addr=0x%lx i=%d idx=%lu t[idx]=0x%lx\n", (unsigned long)addr, i, (unsigned long)idx, (unsigned long)pte_val(t[idx]));
+    uintptr_t table_ptr = reinterpret_cast<uintptr_t>(t);
+    if (table_ptr < epm_map_start || table_ptr + PAGE_SIZE > epm_map_end) {
+      fprintf(stderr,
+              "[WALK_ERR] addr=0x%lx i=%d table=0x%lx outside [0x%lx,0x%lx)\n",
+              (unsigned long)addr, i, (unsigned long)table_ptr,
+              (unsigned long)epm_map_start, (unsigned long)epm_map_end);
       fflush(stderr);
+      return 0;
     }
+
+    size_t idx = pt_idx(addr, i);
     if (!(pte_val(t[idx]) & PTE_V)) {
       return create ? __ept_continue_walk_create(addr, &t[idx]) : 0;
     }
 
-    t = reinterpret_cast<pte*>(readMem(
-        reinterpret_cast<uintptr_t>(pte_ppn(t[idx]) << RISCV_PGSHIFT),
-        PAGE_SIZE));
+    uintptr_t next_table_pa =
+        reinterpret_cast<uintptr_t>(pte_ppn(t[idx]) << RISCV_PGSHIFT);
+    if (next_table_pa < startAddr || next_table_pa + PAGE_SIZE > startAddr + epmSize) {
+      fprintf(stderr,
+              "[WALK_ERR] addr=0x%lx i=%d next_pa=0x%lx outside epm [0x%lx,0x%lx) pte=0x%lx\n",
+              (unsigned long)addr, i, (unsigned long)next_table_pa,
+              (unsigned long)startAddr, (unsigned long)(startAddr + epmSize),
+              (unsigned long)pte_val(t[idx]));
+      fflush(stderr);
+      return 0;
+    }
+
+    t = reinterpret_cast<pte*>(readMem(next_table_pa, PAGE_SIZE));
   }
   return &t[pt_idx(addr, 0)];
 }

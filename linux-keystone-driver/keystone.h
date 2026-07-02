@@ -19,7 +19,7 @@
 
 #include <linux/file.h>
 
-/* IMPORTANT: This code assumes Sv39 */
+/* IMPORTANT: This code assumes Sv48 for 64-bit enclave page tables. */
 #include "riscv64.h"
 
 #define PAGE_UP(addr)	(((addr)+((PAGE_SIZE)-1))&(~((PAGE_SIZE)-1)))
@@ -40,6 +40,7 @@ struct epm {
   size_t size;
   unsigned long order;
   paddr_t pa;
+  dma_addr_t dma_handle;
   bool is_cma;
 };
 

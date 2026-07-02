@@ -183,6 +183,8 @@ uintptr_t io_syscall_openat(int dirfd, char* path,
   args->flags = flags;
   args->mode = mode;
   uintptr_t ret = -1;
+  printf("[runtime-debug] io_syscall_openat enter dirfd=%d flags=0x%x\n", dirfd,
+         flags);
 
   size_t pathlen;
   ALLOW_USER_ACCESS(pathlen = _strlen(path)+1);
@@ -405,7 +407,9 @@ uintptr_t io_syscall_fcntl(int fd, int cmd, uintptr_t arg){
 uintptr_t io_syscall_getcwd(char* buf, size_t size){ 
   struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
   sargs_SYS_getcwd* args = (sargs_SYS_getcwd*)edge_syscall->data;
-  // char* syscall_ret = NULL;
+  uintptr_t ret = -1;
+  printf("[runtime-debug] io_syscall_getcwd enter size=%lu\n",
+         (unsigned long) size);
 
   edge_syscall->syscall_num = SYS_getcwd;
 
@@ -414,7 +418,11 @@ uintptr_t io_syscall_getcwd(char* buf, size_t size){
   size_t totalsize = (sizeof(struct edge_syscall) +
                       sizeof(sargs_SYS_getcwd));
 
-  dispatch_edgecall_syscall(edge_syscall, totalsize);
+  ret = dispatch_edgecall_syscall(edge_syscall, totalsize);
+  if ((intptr_t) ret < 0) {
+    print_strace("[runtime] proxied getcwd failed = %li\r\n", ret);
+    return ret;
+  }
 
   copy_to_user(buf, &args->buf, size);
   print_strace("[runtime] proxied getcwd\r\n");
@@ -422,18 +430,22 @@ uintptr_t io_syscall_getcwd(char* buf, size_t size){
 }
 
 uintptr_t io_syscall_chdir(char* path) { 
-
-  path = "./"; 
   uintptr_t ret = -1;
   struct edge_syscall* edge_syscall = (struct edge_syscall*)edge_call_data_ptr();
   sargs_SYS_chdir* args = (sargs_SYS_chdir*)edge_syscall->data;
-  // char* syscall_ret = NULL;
+  size_t pathlen;
 
   edge_syscall->syscall_num = SYS_chdir;
 
-  copy_from_user(args->path, path, strlen(path) + 1);
+  ALLOW_USER_ACCESS(pathlen = _strlen(path) + 1);
+  if (edge_call_check_ptr_valid((uintptr_t)args->path, pathlen) != 0) {
+    print_strace("[runtime] proxied chdir invalid path buffer\r\n");
+    return ret;
+  }
 
-  size_t totalsize = (sizeof(struct edge_syscall)) + strlen(args->path) + 1;
+  copy_from_user(args->path, path, pathlen);
+
+  size_t totalsize = (sizeof(struct edge_syscall)) + pathlen;
   ret = dispatch_edgecall_syscall(edge_syscall, totalsize);
 
   print_strace("[runtime] proxied chdir: %s\r\n", args->path);

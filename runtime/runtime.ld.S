@@ -4,7 +4,7 @@ OUTPUT_ARCH( "riscv" )
 
 SECTIONS
 {
-  . = 0xffffffffc0000000;
+  . = EYRIE_RUNTIME_START;
   PROVIDE(rt_base = .);
   .text : {
     *(.text._start)

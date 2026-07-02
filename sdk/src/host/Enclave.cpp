@@ -27,8 +27,14 @@ Enclave::Enclave() {
 }
 
 Enclave::~Enclave() {
-  if (runtimeFile) delete runtimeFile;
-  if (enclaveFile) delete enclaveFile;
+  if (runtimeFile) {
+    delete runtimeFile;
+    runtimeFile = NULL;
+  }
+  if (enclaveFile) {
+    delete enclaveFile;
+    enclaveFile = NULL;
+  }
   destroy();
 }
 
@@ -44,7 +50,6 @@ fep_flags_to_mode(uint32_t flags) {
 
 Error
 Enclave::loadFlatEnclave(const char* pkgpath) {
-  fprintf(stderr, "[FEP] opening %s\n", pkgpath);
   FILE* fp = fopen(pkgpath, "rb");
   if (!fp) {
     ERROR("cannot open flat package: %s", pkgpath);
@@ -61,9 +66,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
     return Error::FileInitFailure;
   }
 
-  fprintf(stderr, "[FEP] %u segments, rt=0x%lx user=0x%lx\n",
-          hdr.num_segs, hdr.rt_entry, hdr.user_entry);
-
   /* Read segment table */
   FepSegment* segs = new FepSegment[hdr.num_segs];
   if (fread(segs, sizeof(FepSegment), hdr.num_segs, fp) != (size_t)hdr.num_segs) {
@@ -74,7 +76,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
   }
 
   /* Pass 1: allocate VA space for ALL segments (no physical pages yet) */
-  fprintf(stderr, "[FEP] pass1: allocating VA space\n");
   for (uint32_t i = 0; i < hdr.num_segs; i++) {
     FepSegment* seg = &segs[i];
     if (pMemory->epmAllocVspace(seg->va_base, seg->va_pages)
@@ -85,7 +86,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
       return Error::VSpaceAllocationFailure;
     }
   }
-  fprintf(stderr, "[FEP] pass2: loading pages\n");
 
   /* Pass 2: load runtime segments (!U bit) with physical pages */
   for (uint32_t pass = 0; pass < 2; pass++) {
@@ -93,10 +93,8 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
 
     /* snapshot epmFreeList BEFORE allocating physical pages */
     if (loading_runtime) {
-      fprintf(stderr, "[FEP] loading runtime pages\n");
       pMemory->startRuntimeMem();
     } else {
-      fprintf(stderr, "[FEP] loading eapp pages\n");
       pMemory->startEappMem();
     }
 
@@ -139,8 +137,6 @@ Enclave::loadFlatEnclave(const char* pkgpath) {
       }
     }
   }
-
-  fprintf(stderr, "[FEP] loadFlatEnclave done\n");
 
   flat_rt_entry   = hdr.rt_entry;
   flat_user_entry = hdr.user_entry;
@@ -439,7 +435,7 @@ Enclave::init(
     fclose(fp);
     uintptr_t minPages = total_va_pages
                          + ROUND_UP(params.getFreeMemSize(), PAGE_BITS) / PAGE_SIZE
-                         + 65536; /* 256 MB extra for runtime safety */
+                         + 65536; /* 256 MB extra for runtime metadata/page tables */
     if (pDevice->create(minPages) != Error::Success) {
       destroy();
       return Error::DeviceError;
@@ -587,6 +583,11 @@ Enclave::destroy() {
     runtimeFile = NULL;
   }
 
+  if (pMemory) {
+    delete pMemory;
+    pMemory = NULL;
+  }
+
   if (!pDevice) return Error::Success;
   return pDevice->destroy();
 }
@@ -604,9 +605,18 @@ Enclave::run(uintptr_t* retval) {
 
   Error ret = pDevice->run(retval);
   while (ret == Error::EdgeCallHost || ret == Error::EnclaveInterrupted) {
+    printf("[host-debug] enclave yielded ret=%d\n", (int)ret);
     /* enclave is stopped in the middle. */
     if (ret == Error::EdgeCallHost && oFuncDispatch != NULL) {
+      printf("[host-debug] dispatching edge call\n");
+      auto* bytes = reinterpret_cast<unsigned char*>(getSharedBuffer());
+      printf("[host-debug] shared bytes:");
+      for (int i = 0; i < 16; ++i) {
+        printf(" %02x", bytes[i]);
+      }
+      printf("\n");
       oFuncDispatch(getSharedBuffer());
+      asm volatile("fence rw, rw" ::: "memory");
     }
     ret = pDevice->resume(retval);
   }

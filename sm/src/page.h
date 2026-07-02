@@ -35,7 +35,10 @@
 
 #define PTE_PPN_SHIFT 10
 
-#define VA_BITS 39
+#if __riscv_xlen == 32
+#define VA_BITS 32
+#else
+#define VA_BITS 48
+#endif
 #define RISCV_PGLEVEL_TOP ((VA_BITS - RISCV_PGSHIFT)/RISCV_PGLEVEL_BITS)
 #endif
-

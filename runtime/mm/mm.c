@@ -48,7 +48,7 @@ __walk_internal(pte* root, uintptr_t addr, int create)
     t = (pte*) __va(pte_ppn(t[idx]) << RISCV_PAGE_BITS);
   }
 
-  return &t[RISCV_GET_PT_INDEX(addr, 3)];
+  return &t[RISCV_GET_PT_INDEX(addr, RISCV_PT_LEVELS)];
 }
 
 /* walk the page table and return PTE
@@ -231,14 +231,30 @@ void
 __map_with_reserved_page_table_64(uintptr_t dram_base,
                                uintptr_t dram_size,
                                uintptr_t ptr,
+                               pte* l1_pt,
                                pte* l2_pt,
                                pte* l3_pt)
 {
   uintptr_t offset = 0;
-  uintptr_t leaf_level = 3;
+  uintptr_t leaf_level = RISCV_PT_LEVELS;
   pte* leaf_pt = l3_pt;
-  /* use megapage if l3_pt is null */
-  if (!l3_pt) {
+
+  if (RISCV_PT_LEVELS == 4) {
+    assert(l1_pt);
+  } else {
+    assert(l2_pt);
+  }
+
+  /* Use the largest leaf allowed by the reserved table chain. */
+  if (RISCV_PT_LEVELS == 4) {
+    if (!l2_pt) {
+      leaf_level = 2;
+      leaf_pt = l1_pt;
+    } else if (!l3_pt) {
+      leaf_level = 3;
+      leaf_pt = l2_pt;
+    }
+  } else if (!l3_pt) {
     leaf_level = 2;
     leaf_pt = l2_pt;
   }
@@ -248,11 +264,15 @@ __map_with_reserved_page_table_64(uintptr_t dram_base,
 
   /* set root page table entry */
   root_page_table[RISCV_GET_PT_INDEX(ptr, 1)] =
-    ptd_create(ppn(kernel_va_to_pa(l2_pt)));
+    ptd_create(ppn(kernel_va_to_pa(RISCV_PT_LEVELS == 4 ? l1_pt : l2_pt)));
 
-  /* set L2 if it's not leaf */
-  if (leaf_pt != l2_pt) {
-    l2_pt[RISCV_GET_PT_INDEX(ptr, 2)] =
+  if (RISCV_PT_LEVELS == 4 && leaf_pt != l1_pt) {
+    l1_pt[RISCV_GET_PT_INDEX(ptr, 2)] =
+      ptd_create(ppn(kernel_va_to_pa(l2_pt)));
+  }
+
+  if (leaf_pt != l2_pt && l3_pt) {
+    l2_pt[RISCV_GET_PT_INDEX(ptr, RISCV_PT_LEVELS == 4 ? 3 : 2)] =
       ptd_create(ppn(kernel_va_to_pa(l3_pt)));
   }
 
@@ -272,14 +292,15 @@ void
 map_with_reserved_page_table(uintptr_t dram_base,
                              uintptr_t dram_size,
                              uintptr_t ptr,
+                             pte* l1_pt,
                              pte* l2_pt,
                              pte* l3_pt)
 {
   #if __riscv_xlen == 64
-  if (dram_size > RISCV_GET_LVL_PGSIZE(2))
-    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l2_pt, 0);
+  if (!l2_pt)
+    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l1_pt, 0, 0);
   else
-    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l2_pt, l3_pt);
+    __map_with_reserved_page_table_64(dram_base, dram_size, ptr, l1_pt, l2_pt, l3_pt);
   #elif __riscv_xlen == 32
   if (dram_size > RISCV_GET_LVL_PGSIZE(1))
     __map_with_reserved_page_table_32(dram_base, dram_size, ptr, 0);

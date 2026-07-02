@@ -35,15 +35,17 @@ map_physical_memory(uintptr_t dram_base,
   uintptr_t ptr = EYRIE_LOAD_START;
   /* load address should not override kernel address */
   assert(RISCV_GET_PT_INDEX(ptr, 1) != RISCV_GET_PT_INDEX(runtime_va_start, 1));
-  map_with_reserved_page_table(dram_base, dram_size,
-      ptr, load_l2_page_table, load_l3_page_table);
+  assert(dram_size <= EYRIE_LOAD_SIZE_MAX);
+
+  map_with_reserved_page_table(dram_base, dram_size, ptr,
+      load_l1_page_table, 0, 0);
 }
 
 void
 remap_kernel_space(uintptr_t runtime_base,
                    uintptr_t runtime_size)
 {
-  /* eyrie runtime is supposed to be smaller than a megapage */
+  /* eyrie runtime is mapped with reserved bootstrap page tables. */
 
   #if __riscv_xlen == 64
   assert(runtime_size <= RISCV_GET_LVL_PGSIZE(2));
@@ -52,22 +54,55 @@ remap_kernel_space(uintptr_t runtime_base,
   #endif 
 
   map_with_reserved_page_table(runtime_base, runtime_size,
-     runtime_va_start, kernel_l2_page_table, kernel_l3_page_table);
+     runtime_va_start, kernel_l1_page_table, kernel_l2_page_table,
+     kernel_l3_page_table);
 }
+
+static int pte_is_leaf(pte entry);
+static pte* pte_to_va(pte entry);
+static void merge_page_table(pte* dst, pte* src, int level);
 
 void
 copy_root_page_table()
 {
   /* the old table lives in the first page */
   pte* old_root_page_table = (pte*) EYRIE_LOAD_START;
-  int i;
+  merge_page_table(root_page_table, old_root_page_table, RISCV_PT_LEVELS - 1);
+  __asm__ volatile("fence rw, rw\nsfence.vma" ::: "memory");
+}
 
-  /* copy all valid entries of the old root page table */
-  for (i = 0; i < BIT(RISCV_PT_INDEX_BITS); i++) {
-    if (old_root_page_table[i] & PTE_V &&
-        !(root_page_table[i] & PTE_V)) {
-      root_page_table[i] = old_root_page_table[i];
+static int
+pte_is_leaf(pte entry)
+{
+  return entry & (PTE_R | PTE_W | PTE_X);
+}
+
+static pte*
+pte_to_va(pte entry)
+{
+  return (pte*) __va(pte_ppn(entry) << RISCV_PAGE_BITS);
+}
+
+static void
+merge_page_table(pte* dst, pte* src, int level)
+{
+  for (int i = 0; i < BIT(RISCV_PT_INDEX_BITS); i++) {
+    pte src_entry = src[i];
+    if (!(src_entry & PTE_V)) {
+      continue;
     }
+
+    pte dst_entry = dst[i];
+    if (!(dst_entry & PTE_V)) {
+      dst[i] = src_entry;
+      continue;
+    }
+
+    if (level == 0 || pte_is_leaf(src_entry) || pte_is_leaf(dst_entry)) {
+      continue;
+    }
+
+    merge_page_table(pte_to_va(dst_entry), pte_to_va(src_entry), level - 1);
   }
 }
 
@@ -171,8 +206,8 @@ eyrie_boot(uintptr_t dummy, // $a0 contains the return value from the SBI
   /* set timer */
   init_timer();
 
-  /* Enable the FPU */
-  csr_write(sstatus, csr_read(sstatus) | 0x6000);
+  /* Enable FPU and allow S-mode runtime access to UTM/user mappings. */
+  csr_write(sstatus, csr_read(sstatus) | SR_FS | SR_SUM);
 
   debug("eyrie boot finished. drop to the user land ...");
   /* booting all finished, droping to the user land */

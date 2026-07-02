@@ -18,7 +18,7 @@ int epm_destroy(struct epm* epm) {
     dma_free_coherent(keystone_dev.this_device,
         epm->size,
         (void*) epm->ptr,
-        epm->pa);
+        epm->dma_handle);
   } else {
     free_pages(epm->ptr, epm->order);
   }
@@ -34,8 +34,15 @@ int epm_init(struct epm* epm, unsigned int min_pages)
   unsigned long count = min_pages;
   phys_addr_t device_phys_addr = 0;
 
-  /* try to allocate contiguous memory */
+  epm->root_page_table = NULL;
+  epm->ptr = 0;
+  epm->size = 0;
+  epm->order = 0;
+  epm->pa = 0;
+  epm->dma_handle = 0;
   epm->is_cma = 0;
+
+  /* try to allocate contiguous memory */
   order = ilog2(min_pages - 1) + 1;
   count = 0x1 << order;
 
@@ -52,7 +59,7 @@ int epm_init(struct epm* epm, unsigned int min_pages)
     epm_vaddr = (vaddr_t) dma_alloc_coherent(keystone_dev.this_device,
       count << PAGE_SHIFT,
       &device_phys_addr,
-      GFP_KERNEL | __GFP_DMA32);
+      GFP_KERNEL);
 
     if(!device_phys_addr)
       epm_vaddr = 0;
@@ -68,7 +75,8 @@ int epm_init(struct epm* epm, unsigned int min_pages)
   memset((void*)epm_vaddr, 0, PAGE_SIZE*count);
 
   epm->root_page_table = (void*)epm_vaddr;
-  epm->pa = __pa(epm_vaddr);
+  epm->pa = epm->is_cma ? device_phys_addr : __pa(epm_vaddr);
+  epm->dma_handle = device_phys_addr;
   epm->order = order;
   epm->size = count << PAGE_SHIFT;
   epm->ptr = epm_vaddr;

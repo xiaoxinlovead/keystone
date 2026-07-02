@@ -13,6 +13,8 @@ uintptr_t paging_pa_start;
 
 pte paging_l2_page_table[BIT(RISCV_PT_INDEX_BITS)]
     __attribute__((aligned(RISCV_PAGE_SIZE)));
+pte paging_l1_page_table[BIT(RISCV_PT_INDEX_BITS)]
+    __attribute__((aligned(RISCV_PAGE_SIZE)));
 pte paging_l3_page_table[BIT(RISCV_PT_INDEX_BITS)]
     __attribute__((aligned(RISCV_PAGE_SIZE)));
 
@@ -66,7 +68,8 @@ void init_paging(uintptr_t user_pa_start, uintptr_t user_pa_end)
   debug("BACK: 0x%lx-0x%lx (%u KB), va 0x%lx", addr, addr + size, size/1024, paging_backing_storage_addr);
 
   /* create VA mapping, we don't give execution perm */
-  map_with_reserved_page_table(addr, size, EYRIE_PAGING_START, paging_l2_page_table, paging_l3_page_table);
+  map_with_reserved_page_table(addr, size, EYRIE_PAGING_START,
+      paging_l1_page_table, paging_l2_page_table, paging_l3_page_table);
   /*
   remap_physical_pages(vpn(EYRIE_PAGING_START),
                        ppn(addr), size >> RISCV_PAGE_BITS,

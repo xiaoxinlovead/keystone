@@ -20,7 +20,7 @@
 
 #include "util.h"
 
-int *__dummy__errno__ptr__;
+static int dummy_errno_storage;
 
 unsigned long int timer;
 unsigned long int time_timer;
@@ -41,5 +41,5 @@ int similarity_check_32b(float a, float b, float threshold) {
     return 1;
 }
 
-// Dummy declaration for libm exp
-int *__errno(void) { return __dummy__errno__ptr__; }
+// Provide a stable errno storage for enclave-side libc code.
+int *__errno(void) { return &dummy_errno_storage; }

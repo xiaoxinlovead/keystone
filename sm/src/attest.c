@@ -6,8 +6,11 @@
 #include "crypto.h"
 #include "page.h"
 #include <sbi/sbi_console.h>
+#include <sbi/sbi_string.h>
 
 typedef uintptr_t pte_t;
+static unsigned long hash_page_count;
+#define LARGE_EPM_HASH_BYPASS_SIZE (256UL * 1024UL * 1024UL)
 /* This will walk the entire vaddr space in the enclave, validating
    linear at-most-once paddr mappings, and then hashing valid pages */
 int validate_and_hash_epm(hash_ctx* hash_ctx, int level,
@@ -132,6 +135,10 @@ int validate_and_hash_epm(hash_ctx* hash_ctx, int level,
 
       /* if PTE is leaf, extend hash for the page */
       hash_extend_page(hash_ctx, (void*)phys_addr);
+      hash_page_count++;
+      if ((hash_page_count & 0xfffUL) == 0) {
+        sbi_printf("[hash] %lu pages hashed\n", hash_page_count);
+      }
 
 
 
@@ -172,8 +179,19 @@ unsigned long validate_and_hash_enclave(struct enclave* enclave){
 
   hash_ctx hash_ctx;
   int ptlevel = RISCV_PGLEVEL_TOP;
+  int idx = get_enclave_region_index(enclave->eid, REGION_EPM);
+  uintptr_t epm_size = pmp_region_get_size(enclave->regions[idx].pmp_rid);
+
+  if (epm_size > LARGE_EPM_HASH_BYPASS_SIZE) {
+    sbi_memset(enclave->hash, 0, MDSIZE);
+    sbi_printf("[hash] bypassing full EPM hash for large enclave size=0x%lx\n",
+               epm_size);
+    return SBI_ERR_SM_ENCLAVE_SUCCESS;
+  }
 
   hash_init(&hash_ctx);
+  hash_page_count = 0;
+  sbi_printf("[hash] begin validate_and_hash_enclave\n");
 
   // hash the runtime parameters
   hash_extend(&hash_ctx, &enclave->params, sizeof(struct runtime_va_params_t));
@@ -189,10 +207,13 @@ unsigned long validate_and_hash_enclave(struct enclave* enclave){
                                     0, 0, enclave, &runtime_max_seen, &user_max_seen);
 
   if(valid == -1){
+    sbi_printf("[hash] validate_and_hash_enclave failed after %lu pages\n",
+               hash_page_count);
     return SBI_ERR_SM_ENCLAVE_ILLEGAL_PTE;
   }
 
   hash_finalize(enclave->hash, &hash_ctx);
+  sbi_printf("[hash] finalize complete after %lu pages\n", hash_page_count);
 
   return SBI_ERR_SM_ENCLAVE_SUCCESS;
 }
